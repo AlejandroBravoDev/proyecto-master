@@ -1,0 +1,253 @@
+// ====================================================
+// CONFIGURACIÓN DE LA BASE DE DATOS Y GENERADOR PRISMA
+// ====================================================
+
+datasource db {
+  // Proveedor de la base de datos (SQLite en desarrollo)
+  provider = "sqlite"
+}
+
+generator client {
+  // Generador del cliente JS/TS oficial de Prisma
+  provider = "prisma-client-js"
+}
+
+// ----------------------------------------------------
+// 1. Categorías del Menú (Category)
+// Clasifica los productos ofrecidos en el establecimiento
+// ----------------------------------------------------
+model Category {
+  id          Int       @id @default(autoincrement()) // Identificador único autocrementable
+  name        String    @unique                       // Nombre de la categoría (ej: Bebidas, Hamburguesas)
+  description String?                                 // Descripción opcional de la categoría
+  createdAt   DateTime  @default(now()) @map("created_at") // Fecha de creación automática
+  updatedAt   DateTime  @updatedAt @map("updated_at") // Fecha de última actualización automática
+
+  // Relación 1-a-Muchos: Una categoría contiene múltiples productos
+  products    Product[]
+
+  @@map("categories") // Mapeo a la tabla 'categories' en SQLite
+}
+
+// ----------------------------------------------------
+// 2. Productos del Menú (Product)
+// Ítems a la venta en el POS (Preparados o de inventario directo)
+// ----------------------------------------------------
+enum ProductType {
+  PREPARED          // Producto preparado en cocina/barra que consume insumos/receta
+  DIRECT_INVENTORY  // Producto empaquetado directo (ej: lata de gaseosa)
+}
+
+model Product {
+  id          Int          @id @default(autoincrement()) // ID único del producto
+  categoryId  Int          @map("category_id")           // Clave foránea a la categoría
+  name        String                                     // Nombre comercial del producto
+  description String?                                    // Descripción del producto
+  salePrice   Float        @map("sale_price")            // Precio de venta al público
+  image       String?                                    // URL o ruta de la imagen del producto
+  available   Boolean      @default(true)                // Estado de disponibilidad para la venta
+  productType ProductType  @default(PREPARED) @map("product_type") // Tipo de producto (PREPARED | DIRECT_INVENTORY)
+  createdAt   DateTime     @default(now()) @map("created_at") // Fecha de registro
+  updatedAt   DateTime     @updatedAt @map("updated_at") // Fecha de modificación
+
+  // Relaciones
+  category     Category      @relation(fields: [categoryId], references: [id]) // Relación con Categoría
+  recipe       Recipe?       // Relación 1-a-1 opcional: Receta con la lista de insumos
+  orderDetails OrderDetail[] // Relación con ítems de comandas
+  saleDetails  SaleDetail[]  // Relación con ítems de ventas/facturas
+
+  @@index([categoryId]) // Índice para optimizar búsquedas por categoría
+  @@index([available])  // Índice para filtrar productos disponibles rápidamente
+  @@map("products")
+}
+
+// ----------------------------------------------------
+// 3. Insumos / Materias Primas (Ingredient)
+// Representa el inventario de insumos en bodega/cocina
+// ----------------------------------------------------
+model Ingredient {
+  id                Int                 @id @default(autoincrement()) // ID único del insumo
+  name              String              @unique                       // Nombre del insumo (ej: Carne de Res, Pan)
+  description       String?                                           // Descripción opcional
+  measurementUnit   String              @map("measurement_unit")       // Unidad de medida (ej: kg, g, ml, L, unidad)
+  currentStock      Float               @default(0.0) @map("current_stock") // Cantidad física actual en bodega
+  minimumStock      Float               @default(0.0) @map("minimum_stock") // Umbral de alerta para stock bajo
+  unitCost          Float               @default(0.0) @map("unit_cost")    // Costo unitario promedio de adquisición
+  active            Boolean             @default(true)                // Insumo activo o deshabilitado
+  createdAt         DateTime            @default(now()) @map("created_at") // Fecha de registro
+  updatedAt         DateTime            @updatedAt @map("updated_at") // Fecha de modificación
+
+  // Relaciones
+  recipeDetails     RecipeDetail[]      // Múltiples recetas donde se utiliza este insumo
+  inventoryMovements InventoryMovement[] // Historial de entradas/salidas (Kardex)
+
+  @@map("ingredients")
+}
+
+// ----------------------------------------------------
+// 4. Encabezado de Receta (Recipe)
+// Define la composición requerida para elaborar un producto
+// ----------------------------------------------------
+model Recipe {
+  id            Int            @id @default(autoincrement()) // ID único de la receta
+  productId     Int            @unique @map("product_id")    // Relación 1-a-1 con Producto
+  name          String                                       // Nombre de la receta (ej: Receta Cheeseburger)
+  createdAt     DateTime       @default(now()) @map("created_at") // Fecha de creación
+  updatedAt     DateTime       @updatedAt @map("updated_at") // Fecha de modificación
+
+  // Relaciones
+  product       Product        @relation(fields: [productId], references: [id], onDelete: Cascade)
+  recipeDetails RecipeDetail[] // Lista detallada de insumos requeridos
+
+  @@map("recipes")
+}
+
+// ----------------------------------------------------
+// 5. Detalle de Receta (RecipeDetail)
+// Especifica la cantidad exacta de un insumo requerida por receta
+// ----------------------------------------------------
+model RecipeDetail {
+  id              Int        @id @default(autoincrement()) // ID del detalle
+  recipeId        Int        @map("recipe_id")             // ID de la receta contenedora
+  ingredientId    Int        @map("ingredient_id")         // ID del insumo a consumir
+  quantity        Float                                    // Cantidad de insumo por unidad de producto
+  measurementUnit String     @map("measurement_unit")      // Unidad de medida usada en la receta
+
+  // Relaciones
+  recipe          Recipe     @relation(fields: [recipeId], references: [id], onDelete: Cascade)
+  ingredient      Ingredient @relation(fields: [ingredientId], references: [id])
+
+  @@unique([recipeId, ingredientId]) // Evita duplicar el mismo insumo en una misma receta
+  @@index([recipeId])
+  @@index([ingredientId])
+  @@map("recipe_details")
+}
+
+// ----------------------------------------------------
+// 6. Comandas / Pedidos de Cocina (Order)
+// Registro del pedido tomado en mesa o barra
+// ----------------------------------------------------
+model Order {
+  id           Int           @id @default(autoincrement()) // ID interno del pedido
+  number       String        @unique                       // Código legible (ej: ORD-0001)
+  notes        String?                                     // Notas del cliente o mesero (ej: Mesa 4)
+  date         DateTime      @default(now())               // Fecha y hora del pedido
+  total        Float         @default(0.0)                 // Monto total acumulado
+  createdAt    DateTime      @default(now()) @map("created_at")
+  updatedAt    DateTime      @updatedAt @map("updated_at")
+
+  // Relaciones
+  orderDetails OrderDetail[] // Renglones o ítems del pedido
+  sale         Sale?         // Relación 1-a-1 opcional con la venta/factura final
+
+  @@map("orders")
+}
+
+// ----------------------------------------------------
+// 7. Detalle de Comanda (OrderDetail)
+// Renglón específico de un producto dentro de un pedido
+// ----------------------------------------------------
+model OrderDetail {
+  id        Int     @id @default(autoincrement()) // ID único del renglón
+  orderId   Int     @map("order_id")             // ID de la comanda contenedora
+  productId Int     @map("product_id")           // ID del producto solicitado
+  quantity  Int                                  // Cantidad ordenada
+  unitPrice Float   @map("unit_price")           // Precio unitario al momento de ordenar
+  subtotal  Float                                // Subtotal calculado (cantidad * precio unitario)
+  notes     String?                              // Notas específicas del ítem (ej: sin cebolla)
+
+  // Relaciones
+  order     Order   @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  product   Product @relation(fields: [productId], references: [id])
+
+  @@index([orderId])
+  @@index([productId])
+  @@map("order_details")
+}
+
+// ----------------------------------------------------
+// 8. Ventas y Facturación (Sale)
+// Registro de cobranza y facturación fiscal/comercial
+// ----------------------------------------------------
+enum PaymentMethod {
+  CASH      // Pago en efectivo
+  CARD      // Pago con tarjeta (débito/crédito)
+  TRANSFER  // Transferencia bancaria
+  MIXED     // Pago combinado
+}
+
+model Sale {
+  id            Int           @id @default(autoincrement()) // ID único de la venta
+  invoiceNumber String        @unique @map("invoice_number") // Número secuencial de factura (ej: INV-2026-0001)
+  orderId       Int?          @unique @map("order_id")       // Enlace a la comanda facturada (si aplica)
+  subtotal      Float                                        // Subtotal sin impuestos
+  tax           Float         @default(0.0)                  // Impuestos o IVA aplicado
+  discount      Float         @default(0.0)                  // Descuento aplicado
+  total         Float                                        // Total final cobrado (subtotal + tax - discount)
+  paymentMethod PaymentMethod @default(CASH) @map("payment_method") // Forma de pago
+  fecha         DateTime      @default(now())                // Fecha y hora del cobro
+  createdAt     DateTime      @default(now()) @map("created_at")
+
+  // Relaciones
+  order         Order?        @relation(fields: [orderId], references: [id])
+  saleDetails   SaleDetail[]  // Renglones o detalle de la factura
+
+  @@map("sales")
+}
+
+// ----------------------------------------------------
+// 9. Detalle de Venta (SaleDetail)
+// Renglón facturado por producto
+// ----------------------------------------------------
+model SaleDetail {
+  id        Int     @id @default(autoincrement()) // ID único del renglón de venta
+  saleId    Int     @map("sale_id")              // ID de la venta contenedora
+  productId Int     @map("product_id")           // ID del producto facturado
+  quantity  Int                                  // Cantidad vendida
+  unitPrice Float   @map("unit_price")           // Precio de venta unitario
+  subtotal  Float                                // Subtotal cobrado
+
+  // Relaciones
+  sale      Sale    @relation(fields: [saleId], references: [id], onDelete: Cascade)
+  product   Product @relation(fields: [productId], references: [id])
+
+  @@index([saleId])
+  @@index([productId])
+  @@map("sale_details")
+}
+
+// ----------------------------------------------------
+// 10. Movimientos de Inventario / Kardex (InventoryMovement)
+// Registro auditor de todas las entradas, salidas y ajustes de insumos
+// ----------------------------------------------------
+enum MovementType {
+  IN          // Entrada de inventario (compra, ajuste positivo)
+  OUT         // Salida de inventario (venta, consumo receta, desecho)
+  ADJUSTMENT  // Ajuste manual de corrección de stock
+}
+
+enum MovementReason {
+  PURCHASE          // Compra de insumos a proveedores
+  SALE              // Consumo automático por venta/comanda
+  WASTE             // Mermas o insumos caducados/dañados
+  MANUAL_ADJUSTMENT // Ajuste manual en toma de inventario físico
+}
+
+model InventoryMovement {
+  id            Int            @id @default(autoincrement()) // ID único del movimiento
+  ingredientId  Int            @map("ingredient_id")         // ID del insumo afectado
+  type          MovementType                                 // Tipo de movimiento (IN | OUT | ADJUSTMENT)
+  reason        MovementReason                               // Motivo justificado del movimiento
+  quantity      Float                                        // Cantidad movida
+  previousStock Float          @map("previous_stock")        // Stock antes del movimiento
+  newStock      Float          @map("new_stock")             // Stock resultante después del movimiento
+  reference     String?                                      // Referencia o número de orden/documento
+  date          DateTime       @default(now())               // Fecha del movimiento
+
+  // Relaciones
+  ingredient    Ingredient     @relation(fields: [ingredientId], references: [id])
+
+  @@index([ingredientId])
+  @@index([date])
+  @@map("inventory_movements")
+}
