@@ -28,12 +28,15 @@
     "@electron-forge/plugin-fuses": "^7.11.2",
     "@electron-forge/plugin-vite": "^7.11.2",
     "@electron/fuses": "^1.8.0",
+    "@tailwindcss/vite": "^4.3.3",
     "@vitejs/plugin-react": "^6.0.5",
     "electron": "43.3.0",
+    "tailwindcss": "^4.3.3",
     "vite": "^8.2.1"
   },
   "dependencies": {
     "electron-squirrel-startup": "^1.0.1",
+    "lucide-react": "^1.30.0",
     "react": "^19.2.8",
     "react-dom": "^19.2.8",
     "react-router-dom": "^7.18.2"

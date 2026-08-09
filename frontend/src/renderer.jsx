@@ -1,15 +1,13 @@
+import React from 'react';
+import { createRoot } from 'react-dom/client';
+import AppRouter from './app/router';
+import './index.css';
 
-import { createRoot } from "react-dom/client"
+const container = document.getElementById('root');
+const root = createRoot(container);
 
-function App() {
-  return (
-    <>
-      <h1>hola mundo como estás</h1>
-    </>
-  )
-}
-
-const container = document.getElementById("root")
-const root = createRoot(container)
-
-root.render(<App />)
+root.render(
+  <React.StrictMode>
+    <AppRouter />
+  </React.StrictMode>
+);
