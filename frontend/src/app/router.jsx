@@ -1,7 +1,7 @@
 import React from 'react';
 import { createHashRouter, RouterProvider } from 'react-router-dom';
 import MainLayout from './layouts/MainLayout';
-import Dashboard from './pages/Dashboard';
+import DashboardPage from './dashboard/DashboardPage';
 
 const router = createHashRouter([
   {
@@ -10,7 +10,7 @@ const router = createHashRouter([
     children: [
       {
         index: true,
-        element: <Dashboard />,
+        element: <DashboardPage />,
       },
     ],
   },
