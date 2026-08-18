@@ -13,6 +13,7 @@ import recipeRoutes from './recipe.routes';
 import orderRoutes from './order.routes';
 import saleRoutes from './sale.routes';
 import inventoryRoutes from './inventory.routes';
+import dashboardRoutes from './dashboard.routes';
 
 const router = Router();
 
@@ -36,5 +37,8 @@ router.use('/sales', saleRoutes);
 
 // Montar submódulo de Kardex y Alertas de Inventario en /api/inventory
 router.use('/inventory', inventoryRoutes);
+
+// Montar submódulo de Dashboard y KPIs en /api/dashboard
+router.use('/dashboard', dashboardRoutes);
 
 export default router;
