@@ -15,11 +15,41 @@ import prisma from '../prisma/client';
 
 export class DashboardService {
   /**
-   * Calcula los KPIs principales del sistema consultando datos reales de la BD.
+   * Calcula la fecha de inicio según el período solicitado.
+   * @param period 'day' | 'month' | 'year'
    */
-  async getKpis() {
-    // 1. Obtener todas las ventas y sus detalles con relaciones
+  private getStartDate(period: string): Date {
+    const now = new Date();
+    const startDate = new Date(now);
+
+    if (period === 'month') {
+      startDate.setDate(1);
+      startDate.setHours(0, 0, 0, 0);
+    } else if (period === 'year') {
+      startDate.setMonth(0, 1);
+      startDate.setHours(0, 0, 0, 0);
+    } else {
+      // Por defecto 'day'
+      startDate.setHours(0, 0, 0, 0);
+    }
+
+    return startDate;
+  }
+
+  /**
+   * Calcula los KPIs principales del sistema consultando datos reales de la BD filtrados por período.
+   * @param period 'day' | 'month' | 'year' (por defecto 'day')
+   */
+  async getKpis(period: string = 'day') {
+    const startDate = this.getStartDate(period);
+
+    // 1. Obtener las ventas filtradas por fecha de creación (createdAt >= startDate)
     const sales = await prisma.sale.findMany({
+      where: {
+        createdAt: {
+          gte: startDate
+        }
+      },
       include: {
         saleDetails: {
           include: {
@@ -100,8 +130,6 @@ export class DashboardService {
 
     // Mapear lista de insumos críticos con su porcentaje restante
     const criticalStockIngredients = criticalIngredientsList.map((ing) => {
-      // Calcular % restante. Si minimumStock es 0 o mayor, se calcula respecto al máximo/esperado (por ej. minimumStock * 2 o mínimo relativo)
-      // Si minimumStock > 0, % respecto a stock mínimo óptimo (ej: si currentStock es 2.5 y minimumStock es 10, es 25%)
       let percentageRemaining = 0;
       if (ing.minimumStock > 0) {
         percentageRemaining = Math.max(0, Math.round((ing.currentStock / ing.minimumStock) * 100));
@@ -123,6 +151,7 @@ export class DashboardService {
 
     // Retornar métricas completas con datos reales de la BD
     return {
+      period,
       totalRevenue: Number(totalRevenue.toFixed(2)),
       totalItemsSold: Number(totalItemsSold),
       grossProfit: Number(grossProfit.toFixed(2)),
