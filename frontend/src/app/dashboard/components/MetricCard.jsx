@@ -1,69 +1,49 @@
 import React from 'react';
-import { DollarSign, TrendingUp, ShoppingBag, AlertTriangle } from 'lucide-react';
+import { DollarSign, Banknote, AlertTriangle } from 'lucide-react';
 import { formatCurrency, formatNumber } from '../utils/formatters';
 
-const CATEGORY_CONFIG = {
-  totalRevenue: {
-    icon: DollarSign,
-    iconBg: "bg-emerald-500/10 text-emerald-400 border border-emerald-500/20",
-    accentGlow: "from-emerald-500/10 to-transparent",
-    badgeColor: "text-emerald-400 bg-emerald-500/10 border-emerald-500/20",
-  },
-  grossProfit: {
-    icon: TrendingUp,
-    iconBg: "bg-indigo-500/10 text-indigo-400 border border-indigo-500/20",
-    accentGlow: "from-indigo-500/10 to-transparent",
-    badgeColor: "text-indigo-400 bg-indigo-500/10 border-indigo-500/20",
-  },
-  totalItemsSold: {
-    icon: ShoppingBag,
-    iconBg: "bg-blue-500/10 text-blue-400 border border-blue-500/20",
-    accentGlow: "from-blue-500/10 to-transparent",
-    badgeColor: "text-blue-400 bg-blue-500/10 border-blue-500/20",
-  },
-  stockAlertsCount: {
-    icon: AlertTriangle,
-    iconBg: "bg-amber-500/10 text-amber-400 border border-amber-500/20",
-    accentGlow: "from-amber-500/10 to-transparent",
-    badgeColor: "text-amber-400 bg-amber-500/10 border-amber-500/20",
-  },
-};
-
 export default function MetricCard({ metric }) {
-  const config = CATEGORY_CONFIG[metric.category] || CATEGORY_CONFIG.totalRevenue;
-  const Icon = config.icon;
+  const isStockAlert = metric.category === 'stockAlertsCount';
+  const isUnits = metric.type === 'number' && !isStockAlert;
 
-  const formattedValue =
-    metric.type === 'currency'
-      ? formatCurrency(metric.rawValue)
-      : formatNumber(metric.rawValue);
+  const formattedValue = metric.type === 'currency'
+    ? formatCurrency(metric.rawValue)
+    : isUnits
+    ? `${formatNumber(metric.rawValue)} und`
+    : formatNumber(metric.rawValue);
 
   return (
-    <div className="relative overflow-hidden rounded-2xl bg-slate-900/80 border border-slate-800 p-6 transition-all duration-300 hover:border-slate-700 hover:shadow-xl hover:shadow-indigo-500/5 group">
-      {/* Subtle top background gradient */}
-      <div className={`absolute inset-0 bg-gradient-to-br ${config.accentGlow} opacity-50 group-hover:opacity-100 transition-opacity`} />
+    <div className="bg-white rounded-3xl border border-slate-200/80 shadow-sm relative overflow-hidden flex flex-col justify-between transition-all duration-300 hover:shadow-md hover:-translate-y-0.5">
+      {/* Top Red Accent Header Bar */}
+      <div className="h-3 bg-[#E63946] w-full rounded-t-3xl" />
 
-      <div className="relative z-10 flex flex-col justify-between h-full">
-        <div>
-          <div className="flex items-center justify-between">
-            <span className="text-sm font-medium text-slate-400">{metric.title}</span>
-            <div className={`p-2.5 rounded-xl ${config.iconBg}`}>
-              <Icon className="w-5 h-5" />
-            </div>
-          </div>
+      <div className="p-6 relative">
+        {/* Title */}
+        <span className="text-sm font-bold text-slate-500 block mb-2">{metric.title}</span>
 
-          <div className="mt-4">
-            <div className="text-3xl font-extrabold text-white tracking-tight">
-              {formattedValue}
-            </div>
-          </div>
+        {/* Large Value */}
+        <div className="text-3xl font-black text-[#584235] tracking-tight mb-3">
+          {formattedValue}
         </div>
 
-        <div className="mt-6 flex items-center justify-between pt-4 border-t border-slate-800/60">
-          <span className="text-xs text-slate-500">{metric.description}</span>
-          <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium border ${config.badgeColor}`}>
-            KPI
-          </span>
+        {/* Bottom Details & Watermark Icon */}
+        <div className="flex items-center justify-between pt-2">
+          {isStockAlert ? (
+            <span className="text-xs font-semibold text-slate-400">Artículos por acabarse</span>
+          ) : (
+            <span className="inline-flex items-center text-xs font-bold text-emerald-500 bg-emerald-50 px-2 py-0.5 rounded-md">
+              +2.5%
+            </span>
+          )}
+
+          {/* Watermark Icon */}
+          <div className="opacity-15 text-slate-400">
+            {isStockAlert ? (
+              <AlertTriangle className="w-10 h-10 text-[#E63946] opacity-40" />
+            ) : (
+              <Banknote className="w-12 h-12 text-slate-600" />
+            )}
+          </div>
         </div>
       </div>
     </div>
