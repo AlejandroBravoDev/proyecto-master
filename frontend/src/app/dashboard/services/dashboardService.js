@@ -6,15 +6,19 @@
 import { DASHBOARD_ENDPOINTS } from './endpoints';
 
 /**
- * Fetches real KPI metrics, top selling products and critical stock from DASHBOARD_ENDPOINTS.KPIS.
+ * Fetches real KPI metrics, top selling products and critical stock filtered by period.
+ * @param {'day'|'month'|'year'} period - Filter period: 'day', 'month', or 'year'. Defaults to 'day'.
  * @returns {Promise<{
+ *   period: string,
  *   cards: Array<{id: string, key: string, title: string, rawValue: number, type: 'currency'|'number', category: string, description: string}>,
  *   topSellingProducts: Array<{id: number|string, name: string, totalSold: number}>,
  *   criticalStockIngredients: Array<{id: number|string, name: string, currentStock: number, minimumStock: number, percentageRemaining: number}>
  * }>}
  */
-export async function fetchDashboardKPIs() {
-  const response = await fetch(DASHBOARD_ENDPOINTS.KPIS, {
+export async function fetchDashboardKPIs(period = 'day') {
+  const url = `${DASHBOARD_ENDPOINTS.KPIS}?period=${encodeURIComponent(period)}`;
+
+  const response = await fetch(url, {
     method: 'GET',
     headers: {
       'Content-Type': 'application/json',
@@ -29,6 +33,7 @@ export async function fetchDashboardKPIs() {
   const kpis = await response.json();
 
   return {
+    period: kpis.period || period,
     cards: [
       {
         id: 'total-revenue',

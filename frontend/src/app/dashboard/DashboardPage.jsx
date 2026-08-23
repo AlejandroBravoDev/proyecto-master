@@ -7,6 +7,7 @@ import CriticalInventoryWidget from './components/CriticalInventoryWidget';
 import { fetchDashboardKPIs } from './services/dashboardService';
 
 export default function DashboardPage() {
+  const [selectedPeriod, setSelectedPeriod] = useState('day');
   const [data, setData] = useState({
     cards: [],
     topSellingProducts: [],
@@ -15,11 +16,11 @@ export default function DashboardPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
-  const loadData = useCallback(() => {
+  const loadData = useCallback((period) => {
     setLoading(true);
     setError(null);
 
-    fetchDashboardKPIs()
+    fetchDashboardKPIs(period)
       .then((res) => {
         setData(res);
         setLoading(false);
@@ -32,15 +33,17 @@ export default function DashboardPage() {
   }, []);
 
   useEffect(() => {
-    loadData();
-  }, [loadData]);
+    loadData(selectedPeriod);
+  }, [selectedPeriod, loadData]);
 
   return (
     <div className="space-y-6 max-w-7xl mx-auto pb-8">
-      {/* Top Header Card */}
+      {/* Top Header Card with Period Filter */}
       <DashboardHeaderCard
         title="Dashboard MasterFood"
         subtitle="Aquí podrás ver un resumen muy completo del negocio"
+        activePeriod={selectedPeriod}
+        onPeriodChange={setSelectedPeriod}
       />
 
       {/* Main Content Area */}
@@ -69,7 +72,7 @@ export default function DashboardPage() {
             </div>
           </div>
           <button
-            onClick={loadData}
+            onClick={() => loadData(selectedPeriod)}
             className="flex items-center space-x-2 px-5 py-2.5 rounded-2xl bg-[#E63946] hover:bg-red-700 text-white text-xs font-bold shadow-md shadow-red-500/20 transition-all cursor-pointer"
           >
             <RefreshCw className="w-4 h-4" />

@@ -5,15 +5,15 @@ export default function TopProductsWidget({ products = [] }) {
   const hasProducts = Array.isArray(products) && products.length > 0;
 
   return (
-    <div className="bg-white rounded-3xl border border-slate-200/80 shadow-sm p-6 flex flex-col justify-between min-h-[280px]">
-      <h2 className="text-lg font-bold text-[#584235] mb-4">Productos más vendidos</h2>
+    <div className="bg-white rounded-3xl border border-slate-200/80 shadow-sm p-6 flex flex-col justify-between min-h-70">
+      <h2 className="text-lg font-bold text-brand-text mb-4">Productos más vendidos</h2>
 
       {!hasProducts ? (
         <div className="flex-1 flex flex-col items-center justify-center p-6 text-center text-slate-400 bg-slate-50/50 rounded-2xl border border-dashed border-slate-200">
           <div className="w-12 h-12 rounded-full bg-slate-100 flex items-center justify-center text-slate-400 mb-3">
             <ShoppingBag className="w-6 h-6" />
           </div>
-          <p className="text-sm font-semibold text-[#584235]">No hay productos registrados ahora</p>
+          <p className="text-sm font-semibold text-brand-text">No hay productos registrados ahora</p>
           <p className="text-xs text-slate-400 mt-1">Aún no se ha registrado ninguna venta en el sistema.</p>
         </div>
       ) : (
@@ -31,7 +31,7 @@ export default function TopProductsWidget({ products = [] }) {
                 <div
                   className={`w-12 h-12 rounded-2xl flex items-center justify-center font-bold text-lg shrink-0 shadow-sm ${
                     isTop
-                      ? 'bg-[#E63946] text-white shadow-red-200'
+                      ? 'bg-brand-red text-white shadow-red-200'
                       : 'bg-slate-200/80 text-slate-700'
                   }`}
                 >
@@ -40,7 +40,7 @@ export default function TopProductsWidget({ products = [] }) {
 
                 {/* Product details */}
                 <div className="flex-1 min-w-0">
-                  <p className="font-bold text-[#584235] text-base leading-snug truncate">
+                  <p className="font-bold text-brand-text text-base leading-snug truncate">
                     {item.name}
                   </p>
                   <p className="text-xs text-slate-400 font-medium">
