@@ -4,7 +4,7 @@ import Sidebar from './Sidebar';
 
 export default function MainLayout() {
   return (
-    <div className="flex min-h-screen bg-[#F8F9FA] text-[#584235] font-['Istok_Web']">
+    <div className="flex min-h-screen bg-brand-bg text-brand-text font-['Istok_Web']">
       {/* Global Collapsible Sidebar */}
       <Sidebar />
 
