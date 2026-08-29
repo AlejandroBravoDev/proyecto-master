@@ -3,8 +3,8 @@
  * SERVICIO DE INSUMOS E INVENTARIO (MODEL/SERVICE LAYER)
  * ====================================================
  * Gestiona las materias primas en bodega, el control de stock,
- * alertas de nivel crítico, registros de movimientos manuales
- * y exportación / generación de plantillas Excel.
+ * alertas de nivel crítico, registros de movimientos manuales,
+ * exportación / generación de plantillas y carga masiva desde Excel.
  */
 
 import prisma from '../prisma/client';
@@ -173,7 +173,7 @@ export class IngredientService {
     headerRow.fill = {
       type: 'pattern',
       pattern: 'solid',
-      fgColor: { argb: '584235' } // Color temático marrón/brand
+      fgColor: { argb: '584235' }
     };
     headerRow.alignment = { vertical: 'middle', horizontal: 'center' };
 
@@ -252,13 +252,113 @@ export class IngredientService {
         status: statusText
       });
 
-      // Resaltar en rojo claro filas con stock crítico
       if (isCritical) {
         row.getCell('status').font = { color: { argb: 'DC2626' }, bold: true };
       }
     }
 
     return workbook;
+  }
+
+  /**
+   * Importa de forma masiva insumos desde un archivo de Excel (Buffer).
+   * Si un insumo ya existe por su nombre, actualiza sus campos; si no existe, lo crea.
+   * @param buffer Buffer binario del archivo Excel subido
+   */
+  async importIngredientsFromExcel(buffer: any) {
+    const workbook = new ExcelJS.Workbook();
+    await workbook.xlsx.load(buffer);
+
+    const worksheet = workbook.getWorksheet(1);
+    if (!worksheet) {
+      throw new Error('NO_WORKSHEET_FOUND');
+    }
+
+    const results = {
+      created: 0,
+      updated: 0,
+      skipped: 0,
+      errors: [] as string[]
+    };
+
+    // Iterar filas omitiendo el encabezado (fila 1)
+    worksheet.eachRow(async (row, rowNumber) => {
+      if (rowNumber === 1) return;
+
+      const rawName = row.getCell(1).text || row.getCell(1).value;
+      const rawDescription = row.getCell(2).text || row.getCell(2).value;
+      const rawMeasurementUnit = row.getCell(3).text || row.getCell(3).value;
+      const rawCurrentStock = row.getCell(4).value;
+      const rawMinimumStock = row.getCell(5).value;
+      const rawUnitCost = row.getCell(6).value;
+
+      const name = rawName ? String(rawName).trim() : '';
+      const description = rawDescription ? String(rawDescription).trim() : undefined;
+      const measurementUnit = rawMeasurementUnit ? String(rawMeasurementUnit).trim() : '';
+
+      // Omitir filas vacías o de ejemplo si no traen nombre ni unidad de medida
+      if (!name || !measurementUnit) {
+        results.skipped++;
+        return;
+      }
+
+      const currentStock = typeof rawCurrentStock === 'number' ? rawCurrentStock : parseFloat(String(rawCurrentStock || 0));
+      const minimumStock = typeof rawMinimumStock === 'number' ? rawMinimumStock : parseFloat(String(rawMinimumStock || 0));
+      const unitCost = typeof rawUnitCost === 'number' ? rawUnitCost : parseFloat(String(rawUnitCost || 0));
+
+      try {
+        const existing = await prisma.ingredient.findUnique({
+          where: { name }
+        });
+
+        if (existing) {
+          // Si existe, actualizar sus datos
+          await prisma.ingredient.update({
+            where: { id: existing.id },
+            data: {
+              description: description ?? existing.description,
+              measurementUnit,
+              currentStock: isNaN(currentStock) ? existing.currentStock : currentStock,
+              minimumStock: isNaN(minimumStock) ? existing.minimumStock : minimumStock,
+              unitCost: isNaN(unitCost) ? existing.unitCost : unitCost
+            }
+          });
+          results.updated++;
+        } else {
+          // Si no existe, crearlo y registrar Kardex inicial si stock > 0
+          const newIngredient = await prisma.ingredient.create({
+            data: {
+              name,
+              description,
+              measurementUnit,
+              currentStock: isNaN(currentStock) ? 0 : currentStock,
+              minimumStock: isNaN(minimumStock) ? 0 : minimumStock,
+              unitCost: isNaN(unitCost) ? 0 : unitCost
+            }
+          });
+
+          if (newIngredient.currentStock > 0) {
+            await prisma.inventoryMovement.create({
+              data: {
+                ingredientId: newIngredient.id,
+                type: 'IN',
+                reason: 'PURCHASE',
+                quantity: newIngredient.currentStock,
+                previousStock: 0,
+                newStock: newIngredient.currentStock,
+                reference: 'Bulk Excel Import'
+              }
+            });
+          }
+
+          results.created++;
+        }
+      } catch (err: any) {
+        results.errors.push(`Fila ${rowNumber} (${name}): ${err.message || 'Error al procesar'}`);
+      }
+    });
+
+    return results;
   }
 }
 

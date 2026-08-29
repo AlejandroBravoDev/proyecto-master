@@ -2,8 +2,8 @@
  * ====================================================
  * CONTROLADOR DE INSUMOS E INVENTARIO (CONTROLLER LAYER)
  * ====================================================
- * Procesa peticiones para la administración de stock de materias primas
- * y la exportación/descarga de plantillas en Excel.
+ * Procesa peticiones para la administración de stock de materias primas,
+ * exportación/descarga de plantillas y carga masiva desde Excel.
  */
 
 import { Request, Response } from 'express';
@@ -68,6 +68,29 @@ export class IngredientController {
       return res.end();
     } catch (error) {
       return res.status(500).json({ error: 'Error al exportar el reporte a Excel', details: error });
+    }
+  }
+
+  /**
+   * POST /api/ingredients/import/ingredients
+   * Carga masiva de insumos desde un archivo Excel subido mediante multipart/form-data.
+   */
+  async importExcel(req: Request, res: Response) {
+    try {
+      if (!req.file || !req.file.buffer) {
+        return res.status(400).json({ error: 'Se requiere adjuntar un archivo de Excel (campo file)' });
+      }
+
+      const result = await ingredientService.importIngredientsFromExcel(req.file.buffer as any);
+      return res.status(200).json({
+        message: 'Proceso de carga masiva finalizado',
+        summary: result
+      });
+    } catch (error: any) {
+      if (error.message === 'NO_WORKSHEET_FOUND') {
+        return res.status(400).json({ error: 'El archivo Excel subido no contiene hojas válidas' });
+      }
+      return res.status(500).json({ error: 'Error al procesar la carga masiva de insumos', details: error.message || error });
     }
   }
 

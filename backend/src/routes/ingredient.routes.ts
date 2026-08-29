@@ -6,8 +6,10 @@
  */
 
 import { Router } from 'express';
+import multer from 'multer';
 import { ingredientController } from '../controllers/ingredient.controller';
 
+const upload = multer({ storage: multer.memoryStorage() });
 const router = Router();
 
 // Endpoint GET: Listar todo el inventario de materias primas
@@ -18,6 +20,9 @@ router.get('/template/ingredients', (req, res) => ingredientController.downloadT
 
 // Endpoint GET: Descargar reporte de inventarios de insumos en formato Excel
 router.get('/export/ingredients', (req, res) => ingredientController.exportExcel(req, res));
+
+// Endpoint POST: Carga masiva de insumos desde archivo Excel
+router.post('/import/ingredients', upload.single('file'), (req, res) => ingredientController.importExcel(req, res));
 
 // Endpoint GET: Consultar un insumo y su historial de movimientos
 router.get('/:id', (req, res) => ingredientController.getIngredientById(req, res));
