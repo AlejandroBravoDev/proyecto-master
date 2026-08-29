@@ -2,6 +2,7 @@ import React from 'react';
 import { createHashRouter, RouterProvider } from 'react-router-dom';
 import MainLayout from './layouts/MainLayout';
 import DashboardPage from './dashboard/DashboardPage';
+import InventoryPage from './inventory/InventoryPage';
 
 const router = createHashRouter([
   {
@@ -11,6 +12,10 @@ const router = createHashRouter([
       {
         index: true,
         element: <DashboardPage />,
+      },
+      {
+        path: 'inventario',
+        element: <InventoryPage />,
       },
     ],
   },
