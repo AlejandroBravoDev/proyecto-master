@@ -2,7 +2,8 @@
  * ====================================================
  * CONTROLADOR DE INSUMOS E INVENTARIO (CONTROLLER LAYER)
  * ====================================================
- * Procesa peticiones para la administración de stock de materias primas.
+ * Procesa peticiones para la administración de stock de materias primas
+ * y la exportación/descarga de plantillas en Excel.
  */
 
 import { Request, Response } from 'express';
@@ -19,6 +20,54 @@ export class IngredientController {
       return res.json(ingredients);
     } catch (error) {
       return res.status(500).json({ error: 'Error al obtener los insumos', details: error });
+    }
+  }
+
+  /**
+   * GET /api/ingredients/template/ingredients
+   * Descarga la plantilla de Excel para la carga masiva de insumos.
+   */
+  async downloadTemplate(_req: Request, res: Response) {
+    try {
+      const workbook = await ingredientService.generateIngredientsTemplate();
+
+      res.setHeader(
+        'Content-Type',
+        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+      );
+      res.setHeader(
+        'Content-Disposition',
+        'attachment; filename="plantilla_carga_ingredientes.xlsx"'
+      );
+
+      await workbook.xlsx.write(res);
+      return res.end();
+    } catch (error) {
+      return res.status(500).json({ error: 'Error al generar la plantilla de Excel', details: error });
+    }
+  }
+
+  /**
+   * GET /api/ingredients/export/ingredients
+   * Descarga el reporte de inventario de insumos en formato Excel.
+   */
+  async exportExcel(_req: Request, res: Response) {
+    try {
+      const workbook = await ingredientService.exportIngredientsToExcel();
+
+      res.setHeader(
+        'Content-Type',
+        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+      );
+      res.setHeader(
+        'Content-Disposition',
+        'attachment; filename="reporte_inventario_ingredientes.xlsx"'
+      );
+
+      await workbook.xlsx.write(res);
+      return res.end();
+    } catch (error) {
+      return res.status(500).json({ error: 'Error al exportar el reporte a Excel', details: error });
     }
   }
 

@@ -13,6 +13,12 @@ const router = Router();
 // Endpoint GET: Listar todo el inventario de materias primas
 router.get('/', (req, res) => ingredientController.getIngredients(req, res));
 
+// Endpoint GET: Descargar plantilla de Excel para carga masiva de insumos
+router.get('/template/ingredients', (req, res) => ingredientController.downloadTemplate(req, res));
+
+// Endpoint GET: Descargar reporte de inventarios de insumos en formato Excel
+router.get('/export/ingredients', (req, res) => ingredientController.exportExcel(req, res));
+
 // Endpoint GET: Consultar un insumo y su historial de movimientos
 router.get('/:id', (req, res) => ingredientController.getIngredientById(req, res));
 

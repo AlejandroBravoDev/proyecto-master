@@ -3,10 +3,12 @@
  * SERVICIO DE INSUMOS E INVENTARIO (MODEL/SERVICE LAYER)
  * ====================================================
  * Gestiona las materias primas en bodega, el control de stock,
- * alertas de nivel crítico y registros de movimientos manuales.
+ * alertas de nivel crítico, registros de movimientos manuales
+ * y exportación / generación de plantillas Excel.
  */
 
 import prisma from '../prisma/client';
+import ExcelJS from 'exceljs';
 
 export class IngredientService {
   /**
@@ -143,6 +145,120 @@ export class IngredientService {
     return prisma.ingredient.delete({
       where: { id }
     });
+  }
+
+  /**
+   * Genera el libro de Excel con la plantilla para la carga masiva de insumos.
+   */
+  async generateIngredientsTemplate(): Promise<ExcelJS.Workbook> {
+    const workbook = new ExcelJS.Workbook();
+    workbook.creator = 'POS System';
+    workbook.created = new Date();
+
+    const worksheet = workbook.addWorksheet('Plantilla Insumos');
+
+    // Definición de columnas
+    worksheet.columns = [
+      { header: 'Nombre del Insumo (*)', key: 'name', width: 30 },
+      { header: 'Descripción', key: 'description', width: 40 },
+      { header: 'Unidad de Medida (*)', key: 'measurementUnit', width: 20 },
+      { header: 'Stock Inicial', key: 'currentStock', width: 15 },
+      { header: 'Stock Mínimo', key: 'minimumStock', width: 15 },
+      { header: 'Costo Unitario ($)', key: 'unitCost', width: 18 }
+    ];
+
+    // Estilar encabezados
+    const headerRow = worksheet.getRow(1);
+    headerRow.font = { bold: true, color: { argb: 'FFFFFF' } };
+    headerRow.fill = {
+      type: 'pattern',
+      pattern: 'solid',
+      fgColor: { argb: '584235' } // Color temático marrón/brand
+    };
+    headerRow.alignment = { vertical: 'middle', horizontal: 'center' };
+
+    // Ejemplos de guía en la plantilla
+    worksheet.addRow({
+      name: 'Carne de Res 150g',
+      description: 'Porciones de carne para hamburguesa',
+      measurementUnit: 'unidad',
+      currentStock: 50,
+      minimumStock: 10,
+      unitCost: 2.50
+    });
+
+    worksheet.addRow({
+      name: 'Pan de Hamburguesa',
+      description: 'Pan artesanal brioche',
+      measurementUnit: 'unidad',
+      currentStock: 100,
+      minimumStock: 20,
+      unitCost: 0.60
+    });
+
+    return workbook;
+  }
+
+  /**
+   * Genera el libro de Excel con el reporte actual de inventarios.
+   */
+  async exportIngredientsToExcel(): Promise<ExcelJS.Workbook> {
+    const ingredients = await this.getAllIngredients();
+
+    const workbook = new ExcelJS.Workbook();
+    workbook.creator = 'POS System';
+    workbook.created = new Date();
+
+    const worksheet = workbook.addWorksheet('Reporte Inventario');
+
+    // Definición de columnas
+    worksheet.columns = [
+      { header: 'ID', key: 'id', width: 10 },
+      { header: 'Nombre del Insumo', key: 'name', width: 30 },
+      { header: 'Descripción', key: 'description', width: 35 },
+      { header: 'Unidad de Medida', key: 'measurementUnit', width: 18 },
+      { header: 'Stock Actual', key: 'currentStock', width: 15 },
+      { header: 'Stock Mínimo', key: 'minimumStock', width: 15 },
+      { header: 'Costo Unitario', key: 'unitCost', width: 15 },
+      { header: 'Valor Total Stock', key: 'totalValue', width: 18 },
+      { header: 'Estado Stock', key: 'status', width: 18 }
+    ];
+
+    // Estilar encabezados
+    const headerRow = worksheet.getRow(1);
+    headerRow.font = { bold: true, color: { argb: 'FFFFFF' } };
+    headerRow.fill = {
+      type: 'pattern',
+      pattern: 'solid',
+      fgColor: { argb: '1E293B' }
+    };
+    headerRow.alignment = { vertical: 'middle', horizontal: 'center' };
+
+    // Agregar filas de datos
+    for (const ing of ingredients) {
+      const totalValue = Number((ing.currentStock * ing.unitCost).toFixed(2));
+      const isCritical = ing.currentStock <= ing.minimumStock;
+      const statusText = isCritical ? 'ALERTA / CRÍTICO' : 'NORMAL';
+
+      const row = worksheet.addRow({
+        id: ing.id,
+        name: ing.name,
+        description: ing.description || '-',
+        measurementUnit: ing.measurementUnit,
+        currentStock: ing.currentStock,
+        minimumStock: ing.minimumStock,
+        unitCost: ing.unitCost,
+        totalValue,
+        status: statusText
+      });
+
+      // Resaltar en rojo claro filas con stock crítico
+      if (isCritical) {
+        row.getCell('status').font = { color: { argb: 'DC2626' }, bold: true };
+      }
+    }
+
+    return workbook;
   }
 }
 
