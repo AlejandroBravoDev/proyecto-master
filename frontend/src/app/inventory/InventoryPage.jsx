@@ -15,6 +15,7 @@ import {
   downloadIngredientsTemplate,
   exportIngredientsReport,
 } from './services/inventoryService';
+import { confirmDialog, showErrorAlert } from '../common/alertUtils';
 
 export default function InventoryPage() {
   const [ingredients, setIngredients] = useState([]);
@@ -111,13 +112,20 @@ export default function InventoryPage() {
   };
 
   const handleDeleteIngredient = async (item) => {
-    if (window.confirm(`¿Estás seguro de eliminar el insumo "${item.name}"? Esta acción no se puede deshacer.`)) {
+    const result = await confirmDialog({
+      title: `¿Eliminar "${item.name}"?`,
+      text: 'Esta acción eliminará el insumo del inventario y del catálogo de compras.',
+      confirmButtonText: 'Sí, eliminar',
+      cancelButtonText: 'Cancelar',
+    });
+
+    if (result.isConfirmed) {
       try {
         await deleteIngredient(item.id);
         showToast('Insumo eliminado del inventario.');
         loadData();
       } catch (err) {
-        alert(err.message || 'No se pudo eliminar el insumo.');
+        showErrorAlert('Error al eliminar insumo', err.message || 'No se pudo eliminar el insumo.');
       }
     }
   };

@@ -12,6 +12,7 @@ import {
   updateProduct,
   deleteProduct,
 } from './services/productService';
+import { confirmDialog, showErrorAlert } from '../common/alertUtils';
 
 export default function ProductsPage() {
   const [products, setProducts] = useState([]);
@@ -127,13 +128,20 @@ export default function ProductsPage() {
   };
 
   const handleDeleteProduct = async (item) => {
-    if (window.confirm(`¿Estás seguro de eliminar el producto "${item.name}"? Esta acción no se puede deshacer.`)) {
+    const result = await confirmDialog({
+      title: `¿Eliminar "${item.name}"?`,
+      text: 'El producto se eliminará definitivamente del menú de ventas.',
+      confirmButtonText: 'Sí, eliminar',
+      cancelButtonText: 'Cancelar',
+    });
+
+    if (result.isConfirmed) {
       try {
         await deleteProduct(item.id);
         showToast('Producto eliminado del menú.');
         loadData();
       } catch (err) {
-        alert(err.message || 'No se pudo eliminar el producto.');
+        showErrorAlert('Error al eliminar producto', err.message || 'No se pudo eliminar el producto.');
       }
     }
   };

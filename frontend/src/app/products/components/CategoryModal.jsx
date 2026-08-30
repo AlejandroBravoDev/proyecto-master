@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
-import { X, Plus, Trash2, FolderPlus, AlertCircle, RefreshCw, Layers } from 'lucide-react';
+import { X, Plus, Trash2, FolderPlus, AlertCircle, RefreshCw } from 'lucide-react';
 import { createCategory, deleteCategory } from '../services/productService';
+import { confirmDialog, showErrorAlert, showSuccessToast } from '../../common/alertUtils';
 
 export default function CategoryModal({
   isOpen,
@@ -11,6 +12,7 @@ export default function CategoryModal({
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
   const [saving, setSaving] = useState(false);
+  const [deletingId, setDeletingId] = useState(null);
   const [error, setError] = useState('');
 
   if (!isOpen) return null;
@@ -32,7 +34,10 @@ export default function CategoryModal({
       });
       setName('');
       setDescription('');
-      onCategoriesChanged();
+      showSuccessToast('Categoría creada exitosamente.');
+      if (onCategoriesChanged) {
+        onCategoriesChanged();
+      }
     } catch (err) {
       setError(err.message || 'Error al crear la categoría.');
     } finally {
@@ -41,12 +46,26 @@ export default function CategoryModal({
   };
 
   const handleDelete = async (cat) => {
-    if (window.confirm(`¿Estás seguro de eliminar la categoría "${cat.name}"?`)) {
+    setError('');
+    const result = await confirmDialog({
+      title: `¿Eliminar categoría "${cat.name}"?`,
+      text: 'Se eliminará la categoría del catálogo. Los productos asociados quedarán sin categoría.',
+      confirmButtonText: 'Sí, eliminar',
+      cancelButtonText: 'Cancelar',
+    });
+
+    if (result.isConfirmed) {
+      setDeletingId(cat.id);
       try {
         await deleteCategory(cat.id);
-        onCategoriesChanged();
+        showSuccessToast(`Categoría "${cat.name}" eliminada.`);
+        if (onCategoriesChanged) {
+          onCategoriesChanged();
+        }
       } catch (err) {
-        setError(err.message || 'No se pudo eliminar la categoría.');
+        showErrorAlert('Error al eliminar categoría', err.message || 'No se pudo eliminar la categoría.');
+      } finally {
+        setDeletingId(null);
       }
     }
   };
@@ -135,11 +154,13 @@ export default function CategoryModal({
                       )}
                     </div>
                     <button
+                      type="button"
                       onClick={() => handleDelete(cat)}
-                      className="p-1.5 text-slate-400 hover:text-[#E63946] hover:bg-rose-50 rounded-lg transition-colors cursor-pointer"
+                      disabled={deletingId === cat.id}
+                      className="p-1.5 text-slate-400 hover:text-[#E63946] hover:bg-rose-50 rounded-lg transition-colors cursor-pointer disabled:opacity-50"
                       title="Eliminar categoría"
                     >
-                      <Trash2 className="w-4 h-4" />
+                      <Trash2 className={`w-4 h-4 ${deletingId === cat.id ? 'animate-spin' : ''}`} />
                     </button>
                   </div>
                 ))}
@@ -151,6 +172,7 @@ export default function CategoryModal({
         {/* Footer */}
         <div className="p-4 bg-slate-50/50 border-t border-slate-100 flex justify-end">
           <button
+            type="button"
             onClick={onClose}
             className="px-5 py-2 rounded-2xl bg-slate-200 hover:bg-slate-300 text-slate-700 text-xs font-bold transition-all cursor-pointer"
           >
