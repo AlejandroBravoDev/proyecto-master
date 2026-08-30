@@ -14,6 +14,7 @@ import orderRoutes from './order.routes';
 import saleRoutes from './sale.routes';
 import inventoryRoutes from './inventory.routes';
 import dashboardRoutes from './dashboard.routes';
+import cajaRoutes from './caja.routes';
 
 const router = Router();
 
@@ -40,5 +41,8 @@ router.use('/inventory', inventoryRoutes);
 
 // Montar submódulo de Dashboard y KPIs en /api/dashboard
 router.use('/dashboard', dashboardRoutes);
+
+// Montar submódulo de Caja y Arqueo en /api/caja
+router.use('/caja', cajaRoutes);
 
 export default router;

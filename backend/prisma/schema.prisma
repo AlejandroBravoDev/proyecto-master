@@ -251,3 +251,37 @@ model InventoryMovement {
   @@index([date])
   @@map("inventory_movements")
 }
+
+// ----------------------------------------------------
+// 11. Sesiones de Caja (CashSession)
+// Registro exclusivo de apertura con base inicial y cierre del día/turno
+// ----------------------------------------------------
+enum CashSessionStatus {
+  OPEN    // Caja abierta en operación
+  CLOSED  // Caja cerrada
+}
+
+model CashSession {
+  id                   Int               @id @default(autoincrement())
+  sessionNumber        String            @unique @map("session_number") // Correlativo (ej: CAJA-2026-0001)
+  status               CashSessionStatus @default(OPEN)                 // Estado (OPEN | CLOSED)
+  openedAt             DateTime          @default(now()) @map("opened_at")
+  closedAt             DateTime?         @map("closed_at")
+
+  // Base Inicial (Apertura con desglose de monedas y billetes)
+  initialAmount        Float             @default(0.0) @map("initial_amount")
+  initialDenominations String            @map("initial_denominations") // JSON string { "0.10": 20, "0.50": 10, ... }
+
+  // Cierre de Caja (Conteo de monedas y billetes al final del día)
+  finalAmount          Float?            @map("final_amount")          // Total físico contado al cierre
+  finalDenominations   String?           @map("final_denominations")   // JSON string { "0.10": 15, "1": 30, ... }
+
+  notes                String?                                         // Notas de apertura
+  closingNotes         String?           @map("closing_notes")         // Observaciones del cierre
+
+  createdAt            DateTime          @default(now()) @map("created_at")
+  updatedAt            DateTime          @updatedAt @map("updated_at")
+
+  @@map("cash_sessions")
+}
+
