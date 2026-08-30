@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import {
   LayoutDashboard,
+  UtensilsCrossed,
   ClipboardList,
   Box,
   Wallet,
@@ -16,6 +17,7 @@ export default function Sidebar() {
 
   const navItems = [
     { name: 'Dashboard', path: '/', icon: LayoutDashboard },
+    { name: 'Productos', path: '/productos', icon: UtensilsCrossed },
     { name: 'Comandas', path: '/comandas', icon: ClipboardList },
     { name: 'Inventario', path: '/inventario', icon: Box },
     { name: 'Caja', path: '/caja', icon: Wallet },
@@ -47,7 +49,7 @@ export default function Sidebar() {
         {/* Toggle Collapse Button */}
         <button
           onClick={() => setCollapsed(!collapsed)}
-          className="p-1.5 rounded-full hover:bg-slate-700/80 text-slate-300 hover:text-white transition-colors border border-slate-600/40"
+          className="p-1.5 rounded-full hover:bg-slate-700/80 text-slate-300 hover:text-white transition-colors border border-slate-600/40 cursor-pointer"
           title={collapsed ? "Expandir menú" : "Colapsar menú"}
         >
           {collapsed ? <ChevronRight className="w-4 h-4" /> : <ChevronLeft className="w-4 h-4" />}

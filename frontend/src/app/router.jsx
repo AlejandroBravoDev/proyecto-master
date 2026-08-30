@@ -3,6 +3,7 @@ import { createHashRouter, RouterProvider } from 'react-router-dom';
 import MainLayout from './layouts/MainLayout';
 import DashboardPage from './dashboard/DashboardPage';
 import InventoryPage from './inventory/InventoryPage';
+import ProductsPage from './products/ProductsPage';
 
 const router = createHashRouter([
   {
@@ -12,6 +13,10 @@ const router = createHashRouter([
       {
         index: true,
         element: <DashboardPage />,
+      },
+      {
+        path: 'productos',
+        element: <ProductsPage />,
       },
       {
         path: 'inventario',
