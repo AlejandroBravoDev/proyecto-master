@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
-import { AlertCircle, RefreshCw, CheckCircle2 } from 'lucide-react';
+import { AlertCircle, RefreshCw, CheckCircle2, Layers, AlertTriangle } from 'lucide-react';
 import InventoryHeaderCard from './components/InventoryHeaderCard';
 import IngredientTable from './components/IngredientTable';
 import IngredientModal from './components/IngredientModal';
@@ -167,6 +167,11 @@ export default function InventoryPage() {
     });
   }, [ingredients, searchTerm, activeFilter]);
 
+  const filterTabs = [
+    { id: 'all', label: 'Todos los Insumos', icon: Layers },
+    { id: 'low_stock', label: 'Stock Bajo / Alertas', icon: AlertTriangle, badge: alerts.length },
+  ];
+
   return (
     <div className="space-y-6 max-w-7xl mx-auto pb-8">
       {/* Toast Alert */}
@@ -183,12 +188,40 @@ export default function InventoryPage() {
         </div>
       )}
 
-      {/* Top Header Card */}
+      {/* TOP SWITCHER (Above the 2 Main Containers) */}
+      <div className="flex items-center justify-center">
+        <div className="bg-slate-200/60 p-1.5 rounded-2xl flex items-center space-x-1 border border-slate-200 shadow-sm">
+          {filterTabs.map((filter) => {
+            const Icon = filter.icon;
+            const isActive = activeFilter === filter.id;
+
+            return (
+              <button
+                key={filter.id}
+                onClick={() => setActiveFilter(filter.id)}
+                className={`flex items-center space-x-2 px-5 py-2.5 rounded-xl text-xs font-bold transition-all duration-200 cursor-pointer ${
+                  isActive
+                    ? 'bg-white text-[#584235] shadow-md shadow-slate-300/50'
+                    : 'text-slate-500 hover:text-[#584235]'
+                }`}
+              >
+                <Icon className={`w-3.5 h-3.5 ${isActive ? 'text-[#E63946]' : 'text-slate-400'}`} />
+                <span>{filter.label}</span>
+                {filter.badge > 0 && (
+                  <span className="ml-1 px-2 py-0.5 rounded-full text-[10px] bg-[#E63946] text-white font-extrabold">
+                    {filter.badge}
+                  </span>
+                )}
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* CONTAINER 1: Header & Action Card */}
       <InventoryHeaderCard
         searchTerm={searchTerm}
         onSearchChange={setSearchTerm}
-        activeFilter={activeFilter}
-        onFilterChange={setActiveFilter}
         onNewIngredientClick={handleOpenCreateModal}
         onViewKardexClick={() => handleOpenKardex(null)}
         onDownloadTemplateClick={handleDownloadTemplate}
@@ -196,10 +229,9 @@ export default function InventoryPage() {
         onImportExcelClick={() => setImportModalOpen(true)}
         downloadingTemplate={downloadingTemplate}
         exportingExcel={exportingExcel}
-        alertsCount={alerts.length}
       />
 
-      {/* Main Table / State */}
+      {/* CONTAINER 2: Main Table / Loading / Error State */}
       {loading ? (
         <div className="bg-white rounded-3xl border border-slate-200/80 shadow-sm p-8 space-y-4 animate-pulse">
           {[1, 2, 3, 4, 5, 6].map((i) => (
