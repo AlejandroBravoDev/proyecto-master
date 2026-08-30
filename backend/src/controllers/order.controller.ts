@@ -43,18 +43,18 @@ export class OrderController {
 
   /**
    * POST /api/orders
-   * Crea una comanda y ejecuta el descuento automático de insumos en bodega.
+   * Crea una comanda, registra automáticamente la Venta (Sale) y descuenta insumos.
    */
   async createOrder(req: Request, res: Response) {
     try {
-      const { items, notes } = req.body;
+      const { items, notes, paymentMethod, tax, discount } = req.body;
 
       if (!items || !Array.isArray(items) || items.length === 0) {
         return res.status(400).json({ error: 'La comanda debe incluir al menos un producto' });
       }
 
-      const order = await orderService.createOrder({ items, notes });
-      return res.status(201).json(order);
+      const result = await orderService.createOrder({ items, notes, paymentMethod, tax, discount });
+      return res.status(201).json(result);
     } catch (error: any) {
       if (error.message?.startsWith('PRODUCT_NOT_FOUND:')) {
         return res.status(400).json({ error: `Producto ID ${error.message.split(':')[1]} no encontrado` });

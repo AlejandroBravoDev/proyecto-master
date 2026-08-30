@@ -2,11 +2,13 @@
  * ====================================================
  * SERVICIO DE COMANDAS Y PEDIDOS (MODEL/SERVICE LAYER)
  * ====================================================
- * Procesa la creación de pedidos y efectúa el DESCUENTO AUTOMÁTICO
- * de stock de insumos en bodega según la receta dentro de una transacción.
+ * Procesa la creación de pedidos y efectúa de forma automática:
+ * 1. Descuento de stock de insumos en bodega según receta.
+ * 2. Registro inmediato de la Venta (Sale) cobrada.
  */
 
 import prisma from '../prisma/client';
+import { PaymentMethod } from '@prisma/client';
 
 export class OrderService {
   /**
@@ -41,12 +43,15 @@ export class OrderService {
   }
 
   /**
-   * Registra una nueva comanda y descuenta el stock de insumos en una transacción atómica.
-   * @param data Lista de productos solicitados con sus cantidades y notas opcionales
+   * Registra una nueva comanda, descuenta insumos y genera la VENTA (Sale) automáticamente.
+   * @param data Lista de productos solicitados, forma de pago opcional, impuestos/descuentos y notas
    */
   async createOrder(data: {
     items: Array<{ productId: number; quantity: number; unitPrice?: number; notes?: string }>;
     notes?: string;
+    paymentMethod?: PaymentMethod;
+    tax?: number;
+    discount?: number;
   }) {
     // 1. Obtener la información de los productos solicitados junto a sus recetas e insumos
     const productIds = data.items.map((item) => Number(item.productId));
@@ -65,10 +70,11 @@ export class OrderService {
 
     const productMap = new Map(products.map((p) => [p.id, p]));
 
-    let total = 0;
+    let subtotal = 0;
     const orderDetailsData: any[] = [];
+    const saleDetailsData: any[] = [];
 
-    // 2. Validar cada ítem del pedido, calcular subtotales y validar disponibilidad
+    // 2. Validar cada ítem del pedido, calcular subtotales y estructurar líneas de venta
     for (const item of data.items) {
       const prodId = Number(item.productId);
       const qty = Number(item.quantity);
@@ -83,30 +89,44 @@ export class OrderService {
       }
 
       const unitPrice = Number(item.unitPrice ?? product.salePrice);
-      const subtotal = unitPrice * qty;
-      total += subtotal;
+      const itemSubtotal = unitPrice * qty;
+      subtotal += itemSubtotal;
 
       orderDetailsData.push({
         productId: prodId,
         quantity: qty,
         unitPrice,
-        subtotal,
+        subtotal: itemSubtotal,
         notes: item.notes || null
+      });
+
+      saleDetailsData.push({
+        productId: prodId,
+        quantity: qty,
+        unitPrice,
+        subtotal: itemSubtotal
       });
     }
 
-    // 3. Generar el número correlativo de la comanda (ej: ORD-0001)
-    const count = await prisma.order.count();
-    const number = `ORD-${(count + 1).toString().padStart(4, '0')}`;
+    // 3. Generar códigos únicos para comanda y factura
+    const countOrders = await prisma.order.count();
+    const countSales = await prisma.sale.count();
 
-    // 4. Transacción ACID: Crear comanda y descontar insumos simultáneamente
+    const orderNumber = `ORD-${(countOrders + 1).toString().padStart(4, '0')}`;
+    const invoiceNumber = `INV-${new Date().getFullYear()}-${(countSales + 1).toString().padStart(4, '0')}`;
+
+    const calculatedTax = Number(data.tax || 0);
+    const calculatedDiscount = Number(data.discount || 0);
+    const totalFinal = subtotal + calculatedTax - calculatedDiscount;
+
+    // 4. Transacción ACID: Crear comanda, factura (Sale) y descontar insumos simultáneamente
     return prisma.$transaction(async (tx) => {
-      // Crear registro de comanda
+      // A. Crear registro de comanda
       const newOrder = await tx.order.create({
         data: {
-          number,
+          number: orderNumber,
           notes: data.notes,
-          total,
+          total: subtotal,
           orderDetails: {
             create: orderDetailsData
           }
@@ -118,13 +138,28 @@ export class OrderService {
         }
       });
 
-      // Descontar inventario por cada ingrediente según la receta del producto
+      // B. Crear registro de VENTA/Factura vinculada a la comanda
+      const newSale = await tx.sale.create({
+        data: {
+          invoiceNumber,
+          orderId: newOrder.id,
+          subtotal,
+          tax: calculatedTax,
+          discount: calculatedDiscount,
+          total: totalFinal,
+          paymentMethod: data.paymentMethod || 'CASH',
+          saleDetails: {
+            create: saleDetailsData
+          }
+        }
+      });
+
+      // C. Descontar inventario por cada ingrediente según la receta del producto
       for (const item of data.items) {
         const prodId = Number(item.productId);
         const qty = Number(item.quantity);
         const product = productMap.get(prodId);
 
-        // Si el producto tiene receta, procesar deducción de cada ingrediente
         if (product && product.recipe && product.recipe.recipeDetails) {
           for (const detail of product.recipe.recipeDetails) {
             const ingredientToDeduct = detail.quantity * qty;
@@ -155,7 +190,10 @@ export class OrderService {
         }
       }
 
-      return newOrder;
+      return {
+        ...newOrder,
+        sale: newSale
+      };
     });
   }
 
