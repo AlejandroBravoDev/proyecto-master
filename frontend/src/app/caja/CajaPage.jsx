@@ -1,40 +1,47 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
-import { AlertCircle, RefreshCw, Receipt, Plus } from 'lucide-react';
-import PaymentMethodSwitcher from './components/PaymentMethodSwitcher';
-import CajaHeaderCard from './components/CajaHeaderCard';
-import SaleTable from './components/SaleTable';
-import InvoiceDetailModal from './components/InvoiceDetailModal';
-import DirectSaleModal from './components/DirectSaleModal';
-import { fetchSales, createDirectSale } from './services/cajaService';
+import { AlertCircle, RefreshCw, History, Unlock } from 'lucide-react';
+import CajaStatusBanner from './components/CajaStatusBanner';
+import SessionHistoryTable from './components/SessionHistoryTable';
+import OpenCajaModal from './components/OpenCajaModal';
+import CloseCajaModal from './components/CloseCajaModal';
+import SessionDetailModal from './components/SessionDetailModal';
+import {
+  fetchCajaStatus,
+  fetchCajaHistory,
+  openCajaSession,
+  closeCajaSession
+} from './services/cajaService';
 import { showSuccessToast, showErrorAlert } from '../common/alertUtils';
 
 export default function CajaPage() {
-  const [sales, setSales] = useState([]);
+  const [cajaStatus, setCajaStatus] = useState(null);
+  const [sessions, setSessions] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
-  // Filters
+  // Search filter
   const [searchTerm, setSearchTerm] = useState('');
-  const [activePaymentMethod, setActivePaymentMethod] = useState('all');
 
   // Modals state
-  const [directSaleModalOpen, setDirectSaleModalOpen] = useState(false);
-  const [invoiceModalOpen, setInvoiceModalOpen] = useState(false);
-  const [selectedSale, setSelectedSale] = useState(null);
+  const [openCajaModalOpen, setOpenCajaModalOpen] = useState(false);
+  const [closeCajaModalOpen, setCloseCajaModalOpen] = useState(false);
+  const [selectedSessionId, setSelectedSessionId] = useState(null);
+  const [detailModalOpen, setDetailModalOpen] = useState(false);
 
-  // Load sales history
+  // Load status and history
   const loadData = useCallback(() => {
     setLoading(true);
     setError(null);
 
-    fetchSales()
-      .then((data) => {
-        setSales(Array.isArray(data) ? data : []);
+    Promise.all([fetchCajaStatus(), fetchCajaHistory(50, 1)])
+      .then(([statusData, historyData]) => {
+        setCajaStatus(statusData);
+        setSessions(historyData.sessions || []);
         setLoading(false);
       })
       .catch((err) => {
-        console.error('Error cargando facturas de caja:', err);
-        setError(err.message || 'No se pudo conectar con el servidor para cargar las facturas de caja.');
+        console.error('Error cargando módulo de caja:', err);
+        setError(err.message || 'No se pudo conectar con el servidor para cargar el estado de caja y los arqueos.');
         setLoading(false);
       });
   }, []);
@@ -43,154 +50,112 @@ export default function CajaPage() {
     loadData();
   }, [loadData]);
 
-  // Financial Metrics
-  const metrics = useMemo(() => {
-    let total = 0;
-    let cash = 0;
-    let digital = 0;
-    const methodCounts = { all: sales.length, CASH: 0, CARD: 0, TRANSFER: 0, MIXED: 0 };
-
-    sales.forEach((s) => {
-      const amount = Number(s.total) || 0;
-      total += amount;
-
-      if (s.paymentMethod === 'CASH') {
-        cash += amount;
-      } else {
-        digital += amount;
-      }
-
-      if (methodCounts[s.paymentMethod] !== undefined) {
-        methodCounts[s.paymentMethod]++;
-      }
-    });
-
-    return {
-      totalRevenue: total,
-      cashTotal: cash,
-      digitalTotal: digital,
-      invoicesCount: sales.length,
-      methodCounts,
-    };
-  }, [sales]);
-
-  // Filtered sales
-  const filteredSales = useMemo(() => {
-    return sales.filter((sale) => {
-      // Search term
+  // Filtered sessions
+  const filteredSessions = useMemo(() => {
+    return sessions.filter((s) => {
       const matchesSearch =
-        sale.invoiceNumber.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        (sale.paymentMethod && sale.paymentMethod.toLowerCase().includes(searchTerm.toLowerCase()));
+        s.sessionNumber.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        (s.notes && s.notes.toLowerCase().includes(searchTerm.toLowerCase())) ||
+        (s.closingNotes && s.closingNotes.toLowerCase().includes(searchTerm.toLowerCase()));
 
-      if (!matchesSearch) return false;
-
-      // Method filter
-      if (activePaymentMethod !== 'all' && sale.paymentMethod !== activePaymentMethod) {
-        return false;
-      }
-
-      return true;
+      return matchesSearch;
     });
-  }, [sales, searchTerm, activePaymentMethod]);
+  }, [sessions, searchTerm]);
 
   // Handlers
-  const handleOpenInvoice = (sale) => {
-    setSelectedSale(sale);
-    setInvoiceModalOpen(true);
-  };
-
-  const handleCreateDirectSale = async (payload) => {
+  const handleOpenCaja = async (payload) => {
     try {
-      const created = await createDirectSale(payload);
-      showSuccessToast(`Factura ${created.invoiceNumber || ''} emitida correctamente.`);
+      const session = await openCajaSession(payload);
+      showSuccessToast(`Caja abierta exitosamente (${session.sessionNumber || ''}).`);
       loadData();
     } catch (err) {
-      showErrorAlert('Error al emitir factura', err.message || 'No se pudo registrar la venta.');
+      showErrorAlert('Error al abrir caja', err.message || 'No se pudo abrir la caja registradora.');
     }
+  };
+
+  const handleCloseCaja = async (payload) => {
+    try {
+      const closed = await closeCajaSession(payload);
+      showSuccessToast(`Turno cerrado y arqueado correctamente (${closed.sessionNumber || ''}).`);
+      loadData();
+    } catch (err) {
+      showErrorAlert('Error al cerrar caja', err.message || 'No se pudo cerrar la caja registradora.');
+    }
+  };
+
+  const handleViewSessionDetail = (id) => {
+    setSelectedSessionId(id);
+    setDetailModalOpen(true);
   };
 
   return (
     <div className="space-y-6 max-w-7xl mx-auto pb-8">
-      {/* TOP SWITCHER: Payment Methods Filter */}
-      <PaymentMethodSwitcher
-        activeMethod={activePaymentMethod}
-        onSelectMethod={setActivePaymentMethod}
-        counts={metrics.methodCounts}
+      {/* 1. TOP SHIFT STATUS BANNER (Live metrics / Open / Close state) */}
+      <CajaStatusBanner
+        cajaStatus={cajaStatus}
+        onOpenCajaClick={() => setOpenCajaModalOpen(true)}
+        onCloseCajaClick={() => setCloseCajaModalOpen(true)}
+        onViewHistoryClick={() => {
+          const el = document.getElementById('history-section');
+          if (el) el.scrollIntoView({ behavior: 'smooth' });
+        }}
       />
 
-      {/* CONTAINER 1: Header Card with Metrics */}
-      <CajaHeaderCard
-        searchTerm={searchTerm}
-        onSearchChange={setSearchTerm}
-        onNewSaleClick={() => setDirectSaleModalOpen(true)}
-        totalRevenue={metrics.totalRevenue}
-        cashTotal={metrics.cashTotal}
-        digitalTotal={metrics.digitalTotal}
-        invoicesCount={filteredSales.length}
-      />
-
-      {/* CONTAINER 2: Sales Invoices Table / States */}
-      {loading ? (
-        <div className="bg-white rounded-3xl border border-slate-200/80 shadow-sm p-8 space-y-4 animate-pulse">
-          {[1, 2, 3, 4, 5, 6].map((i) => (
-            <div key={i} className="h-12 bg-slate-100 rounded-2xl" />
-          ))}
-        </div>
-      ) : error ? (
-        <div className="rounded-3xl bg-rose-50 border border-rose-200 p-6 flex flex-col sm:flex-row items-center justify-between gap-4 text-rose-800 shadow-sm">
-          <div className="flex items-center space-x-3">
-            <AlertCircle className="w-6 h-6 text-[#E63946] shrink-0" />
-            <div>
-              <p className="font-bold text-[#584235]">Error al conectar con la API de Caja</p>
-              <p className="text-xs text-rose-600 mt-0.5">{error}</p>
-            </div>
+      {/* 2. SESSIONS HISTORY AUDIT TABLE */}
+      <div id="history-section">
+        {loading ? (
+          <div className="bg-white rounded-3xl border border-slate-200/80 shadow-sm p-8 space-y-4 animate-pulse">
+            {[1, 2, 3, 4, 5].map((i) => (
+              <div key={i} className="h-12 bg-slate-100 rounded-2xl" />
+            ))}
           </div>
-          <button
-            onClick={loadData}
-            className="flex items-center space-x-2 px-5 py-2.5 rounded-2xl bg-[#E63946] hover:bg-red-700 text-white text-xs font-bold shadow-md shadow-red-500/20 transition-all cursor-pointer"
-          >
-            <RefreshCw className="w-4 h-4" />
-            <span>Reintentar</span>
-          </button>
-        </div>
-      ) : filteredSales.length === 0 ? (
-        <div className="bg-white rounded-3xl border border-slate-200/80 shadow-sm p-12 text-center space-y-3">
-          <Receipt className="w-12 h-12 text-slate-300 mx-auto" />
-          <h3 className="text-base font-bold text-[#584235]">No hay facturas registradas</h3>
-          <p className="text-xs text-slate-400 max-w-sm mx-auto">
-            {searchTerm || activePaymentMethod !== 'all'
-              ? 'No se encontraron facturas con los filtros aplicados.'
-              : 'Las ventas cobradas y comandas despachadas aparecerán aquí automáticamente.'}
-          </p>
-          <div className="pt-2">
+        ) : error ? (
+          <div className="rounded-3xl bg-rose-50 border border-rose-200 p-6 flex flex-col sm:flex-row items-center justify-between gap-4 text-rose-800 shadow-sm">
+            <div className="flex items-center space-x-3">
+              <AlertCircle className="w-6 h-6 text-[#E63946] shrink-0" />
+              <div>
+                <p className="font-bold text-[#584235]">Error al conectar con la API de Caja</p>
+                <p className="text-xs text-rose-600 mt-0.5">{error}</p>
+              </div>
+            </div>
             <button
-              onClick={() => setDirectSaleModalOpen(true)}
-              className="inline-flex items-center space-x-2 px-5 py-2.5 rounded-2xl bg-[#E63946] hover:bg-red-700 text-white text-xs font-bold shadow-md shadow-red-500/20 transition-all cursor-pointer"
+              onClick={loadData}
+              className="flex items-center space-x-2 px-5 py-2.5 rounded-2xl bg-[#E63946] hover:bg-red-700 text-white text-xs font-bold shadow-md shadow-red-500/20 transition-all cursor-pointer"
             >
-              <Plus className="w-4 h-4" />
-              <span>Realizar Primer Cobro</span>
+              <RefreshCw className="w-4 h-4" />
+              <span>Reintentar</span>
             </button>
           </div>
-        </div>
-      ) : (
-        <SaleTable
-          sales={filteredSales}
-          onViewInvoice={handleOpenInvoice}
-        />
-      )}
+        ) : (
+          <SessionHistoryTable
+            sessions={filteredSessions}
+            searchTerm={searchTerm}
+            onSearchChange={setSearchTerm}
+            onViewSessionDetail={handleViewSessionDetail}
+          />
+        )}
+      </div>
 
-      {/* Modal: Direct Sale POS */}
-      <DirectSaleModal
-        isOpen={directSaleModalOpen}
-        onClose={() => setDirectSaleModalOpen(false)}
-        onSubmit={handleCreateDirectSale}
+      {/* Modal: Open Shift / Float Count */}
+      <OpenCajaModal
+        isOpen={openCajaModalOpen}
+        onClose={() => setOpenCajaModalOpen(false)}
+        onSubmit={handleOpenCaja}
       />
 
-      {/* Modal: Invoice / Receipt View */}
-      <InvoiceDetailModal
-        isOpen={invoiceModalOpen}
-        onClose={() => setInvoiceModalOpen(false)}
-        sale={selectedSale}
+      {/* Modal: Close Shift / Arqueo */}
+      <CloseCajaModal
+        isOpen={closeCajaModalOpen}
+        onClose={() => setCloseCajaModalOpen(false)}
+        activeSession={cajaStatus?.activeSession}
+        onSubmit={handleCloseCaja}
+      />
+
+      {/* Modal: Session Full Audit Detail */}
+      <SessionDetailModal
+        isOpen={detailModalOpen}
+        onClose={() => setDetailModalOpen(false)}
+        sessionId={selectedSessionId}
       />
     </div>
   );
