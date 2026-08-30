@@ -202,7 +202,10 @@ export class OrderService {
    * @param id ID de la comanda
    */
   async deleteOrder(id: number) {
-    return prisma.order.delete({ where: { id } });
+    return prisma.$transaction(async (tx) => {
+      await tx.sale.deleteMany({ where: { orderId: id } });
+      return tx.order.delete({ where: { id } });
+    });
   }
 }
 
