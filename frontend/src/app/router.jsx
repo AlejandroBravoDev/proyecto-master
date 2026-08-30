@@ -2,8 +2,10 @@ import React from 'react';
 import { createHashRouter, RouterProvider } from 'react-router-dom';
 import MainLayout from './layouts/MainLayout';
 import DashboardPage from './dashboard/DashboardPage';
-import InventoryPage from './inventory/InventoryPage';
 import ProductsPage from './products/ProductsPage';
+import OrdersPage from './orders/OrdersPage';
+import InventoryPage from './inventory/InventoryPage';
+import CajaPage from './caja/CajaPage';
 
 const router = createHashRouter([
   {
@@ -19,8 +21,16 @@ const router = createHashRouter([
         element: <ProductsPage />,
       },
       {
+        path: 'comandas',
+        element: <OrdersPage />,
+      },
+      {
         path: 'inventario',
         element: <InventoryPage />,
+      },
+      {
+        path: 'caja',
+        element: <CajaPage />,
       },
     ],
   },
