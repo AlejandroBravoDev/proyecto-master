@@ -41,7 +41,7 @@ export default function Sidebar() {
               <span className="font-bold text-lg tracking-wide text-white">
                 Master<span className="text-[#E63946]">Food</span>
               </span>
-              <span className="text-[10px] text-slate-400 font-medium">POS System</span>
+              <span className="text-[10px] text-slate-400 font-medium">App</span>
             </div>
           )}
         </div>

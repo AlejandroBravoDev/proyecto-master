@@ -1,8 +1,8 @@
 {
-  "name": "frontend",
-  "productName": "frontend",
+  "name": "masterfood-app",
+  "productName": "MasterFood App",
   "version": "1.0.0",
-  "description": "My Electron application description",
+  "description": "MasterFood App - Sistema POS y Gestión para Restaurantes",
   "main": ".vite/build/main.js",
   "private": true,
   "scripts": {

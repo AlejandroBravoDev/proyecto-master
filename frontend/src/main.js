@@ -10,6 +10,7 @@ if (started) {
 const createWindow = () => {
   // Create the browser window.
   const mainWindow = new BrowserWindow({
+    title: 'MasterFood App',
     width: 1000,
     height: 800,
     webPreferences: {
