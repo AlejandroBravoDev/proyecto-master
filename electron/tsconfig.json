@@ -1,0 +1,27 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "commonjs",
+    "moduleResolution": "node",
+    "outDir": "./dist",
+    "rootDir": "./src",
+    "strict": false,
+    "noImplicitAny": false,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "forceConsistentCasingInFileNames": true,
+    "resolveJsonModule": true,
+    "baseUrl": ".",
+    "paths": {
+      "electron": ["../frontend/node_modules/electron"],
+      "better-sqlite3": ["../backend/node_modules/better-sqlite3"]
+    },
+    "typeRoots": [
+      "../backend/node_modules/@types"
+    ],
+    "types": [
+      "node"
+    ]
+  },
+  "include": ["src/**/*"]
+}

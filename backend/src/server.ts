@@ -51,9 +51,46 @@ app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
   res.status(500).json({ error: 'Error interno del servidor', details: err.message || err });
 });
 
-// 9. Iniciar la escucha del servidor en el puerto especificado
-app.listen(PORT, () => {
-  console.log(`🚀 POS Backend Server running on http://localhost:${PORT}`);
-});
+import { initializeDatabase } from './prisma/init';
+
+let server: any = null;
+
+// 9. Inicializar base de datos y arrancar servidor
+async function startServer() {
+  try {
+    await initializeDatabase();
+  } catch (dbErr) {
+    console.error('[Backend] Error crítico inicializando base de datos:', dbErr);
+  }
+
+  server = app.listen(PORT, () => {
+    console.log(`🚀 POS Backend Server running on http://localhost:${PORT}`);
+  });
+}
+
+startServer();
+
+// Manejo de señales de terminación para cierre limpio (llamado por Electron)
+const handleShutdown = (signal: string) => {
+  console.log(`Recibida señal ${signal}. Cerrando servidor Express limpiamente...`);
+  if (server) {
+    server.close(() => {
+      console.log('Servidor HTTP cerrado.');
+      process.exit(0);
+    });
+  } else {
+    process.exit(0);
+  }
+
+  // Si no se cierra en 3 segundos, forzar salida
+  setTimeout(() => {
+    console.error('Forzando cierre por tiempo de espera...');
+    process.exit(1);
+  }, 3000);
+};
+
+process.on('SIGTERM', () => handleShutdown('SIGTERM'));
+process.on('SIGINT', () => handleShutdown('SIGINT'));
 
 export default app;
+

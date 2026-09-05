@@ -3,11 +3,12 @@
  * Dynamically constructs full URLs combining VITE_API_URL from .env + endpoint path.
  */
 
-const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001';
+import { getApiBaseUrl } from '../../../config/api';
 
 export const ORDER_ENDPOINTS = {
-  ORDERS: `${API_BASE_URL}/api/orders`,
-  ORDER_DETAIL: (id) => `${API_BASE_URL}/api/orders/${id}`,
-  PRODUCTS: `${API_BASE_URL}/api/products`,
-  CATEGORIES: `${API_BASE_URL}/api/categories`,
+  get ORDERS() { return `${getApiBaseUrl()}/api/orders`; },
+  ORDER_DETAIL: (id) => `${getApiBaseUrl()}/api/orders/${id}`,
+  get PRODUCTS() { return `${getApiBaseUrl()}/api/products`; },
+  get CATEGORIES() { return `${getApiBaseUrl()}/api/categories`; },
 };
+

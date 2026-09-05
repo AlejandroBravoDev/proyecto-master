@@ -3,12 +3,13 @@
  * Dynamically constructs full URLs combining VITE_API_URL from .env + endpoint path.
  */
 
-const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001';
+import { getApiBaseUrl } from '../../../config/api';
 
 export const CAJA_ENDPOINTS = {
-  STATUS: `${API_BASE_URL}/api/caja/status`,
-  OPEN: `${API_BASE_URL}/api/caja/open`,
-  CLOSE: `${API_BASE_URL}/api/caja/close`,
-  HISTORY: `${API_BASE_URL}/api/caja/history`,
-  SESSION_DETAIL: (id) => `${API_BASE_URL}/api/caja/session/${id}`,
+  get STATUS() { return `${getApiBaseUrl()}/api/caja/status`; },
+  get OPEN() { return `${getApiBaseUrl()}/api/caja/open`; },
+  get CLOSE() { return `${getApiBaseUrl()}/api/caja/close`; },
+  get HISTORY() { return `${getApiBaseUrl()}/api/caja/history`; },
+  SESSION_DETAIL: (id) => `${getApiBaseUrl()}/api/caja/session/${id}`,
 };
+

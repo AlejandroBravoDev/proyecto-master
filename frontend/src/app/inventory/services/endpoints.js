@@ -3,14 +3,15 @@
  * Dynamically constructs full URLs combining VITE_API_URL from .env + endpoint path.
  */
 
-const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001';
+import { getApiBaseUrl } from '../../../config/api';
 
 export const INVENTORY_ENDPOINTS = {
-  INGREDIENTS: `${API_BASE_URL}/api/ingredients`,
-  INGREDIENT_DETAIL: (id) => `${API_BASE_URL}/api/ingredients/${id}`,
-  ALERTS: `${API_BASE_URL}/api/inventory/alerts`,
-  MOVEMENTS: `${API_BASE_URL}/api/inventory/movements`,
-  TEMPLATE: `${API_BASE_URL}/api/ingredients/template/ingredients`,
-  EXPORT: `${API_BASE_URL}/api/ingredients/export/ingredients`,
-  IMPORT: `${API_BASE_URL}/api/ingredients/import/ingredients`,
+  get INGREDIENTS() { return `${getApiBaseUrl()}/api/ingredients`; },
+  INGREDIENT_DETAIL: (id) => `${getApiBaseUrl()}/api/ingredients/${id}`,
+  get ALERTS() { return `${getApiBaseUrl()}/api/inventory/alerts`; },
+  get MOVEMENTS() { return `${getApiBaseUrl()}/api/inventory/movements`; },
+  get TEMPLATE() { return `${getApiBaseUrl()}/api/ingredients/template/ingredients`; },
+  get EXPORT() { return `${getApiBaseUrl()}/api/ingredients/export/ingredients`; },
+  get IMPORT() { return `${getApiBaseUrl()}/api/ingredients/import/ingredients`; },
 };
+
