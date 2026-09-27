@@ -108,20 +108,60 @@ export class OrderService {
       });
     }
 
-    // 3. Generar códigos únicos para comanda y factura
-    const countOrders = await prisma.order.count();
-    const countSales = await prisma.sale.count();
-
-    const orderNumber = `ORD-${(countOrders + 1).toString().padStart(4, '0')}`;
-    const invoiceNumber = `INV-${new Date().getFullYear()}-${(countSales + 1).toString().padStart(4, '0')}`;
-
     const calculatedTax = Number(data.tax || 0);
     const calculatedDiscount = Number(data.discount || 0);
     const totalFinal = subtotal + calculatedTax - calculatedDiscount;
 
-    // 4. Transacción ACID: Crear comanda, factura (Sale) y descontar insumos simultáneamente
+    // 3. Transacción ACID: Generar correlativos únicos, crear comanda, factura (Sale) y descontar insumos
     return prisma.$transaction(async (tx) => {
-      // A. Crear registro de comanda
+      // A. Generación segura y libre de colisiones de orderNumber (ORD-XXXX)
+      const lastOrder = await tx.order.findFirst({
+        orderBy: { id: 'desc' },
+        select: { id: true, number: true }
+      });
+
+      let nextOrderSeq = (lastOrder?.id ?? 0) + 1;
+      if (lastOrder?.number) {
+        const match = lastOrder.number.match(/(\d+)$/);
+        if (match) {
+          const lastNum = parseInt(match[1], 10);
+          if (!isNaN(lastNum)) {
+            nextOrderSeq = Math.max(nextOrderSeq, lastNum + 1);
+          }
+        }
+      }
+
+      let orderNumber = `ORD-${nextOrderSeq.toString().padStart(4, '0')}`;
+      while (await tx.order.findUnique({ where: { number: orderNumber } })) {
+        nextOrderSeq++;
+        orderNumber = `ORD-${nextOrderSeq.toString().padStart(4, '0')}`;
+      }
+
+      // B. Generación segura y libre de colisiones de invoiceNumber (INV-YYYY-XXXX)
+      const currentYear = new Date().getFullYear();
+      const lastSale = await tx.sale.findFirst({
+        orderBy: { id: 'desc' },
+        select: { id: true, invoiceNumber: true }
+      });
+
+      let nextSaleSeq = (lastSale?.id ?? 0) + 1;
+      if (lastSale?.invoiceNumber) {
+        const match = lastSale.invoiceNumber.match(/(\d+)$/);
+        if (match) {
+          const lastNum = parseInt(match[1], 10);
+          if (!isNaN(lastNum)) {
+            nextSaleSeq = Math.max(nextSaleSeq, lastNum + 1);
+          }
+        }
+      }
+
+      let invoiceNumber = `INV-${currentYear}-${nextSaleSeq.toString().padStart(4, '0')}`;
+      while (await tx.sale.findUnique({ where: { invoiceNumber } })) {
+        nextSaleSeq++;
+        invoiceNumber = `INV-${currentYear}-${nextSaleSeq.toString().padStart(4, '0')}`;
+      }
+
+      // C. Crear registro de comanda
       const newOrder = await tx.order.create({
         data: {
           number: orderNumber,
@@ -138,7 +178,7 @@ export class OrderService {
         }
       });
 
-      // B. Crear registro de VENTA/Factura vinculada a la comanda
+      // D. Crear registro de VENTA/Factura vinculada a la comanda
       const newSale = await tx.sale.create({
         data: {
           invoiceNumber,

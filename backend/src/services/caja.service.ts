@@ -128,9 +128,29 @@ export class CajaService {
     // 2. Calcular la base inicial y normalizar desglose
     const { total, normalized } = this.calculateDenominationsTotal(data.denominations);
 
-    // 3. Generar número secuencial correlativo (ej: CAJA-2026-0001)
-    const count = await prisma.cashSession.count();
-    const sessionNumber = `CAJA-${new Date().getFullYear()}-${(count + 1).toString().padStart(4, '0')}`;
+    // 3. Generar número secuencial correlativo seguro y libre de colisiones (ej: CAJA-YYYY-XXXX)
+    const currentYear = new Date().getFullYear();
+    const lastSession = await prisma.cashSession.findFirst({
+      orderBy: { id: 'desc' },
+      select: { id: true, sessionNumber: true }
+    });
+
+    let nextSessionSeq = (lastSession?.id ?? 0) + 1;
+    if (lastSession?.sessionNumber) {
+      const match = lastSession.sessionNumber.match(/(\d+)$/);
+      if (match) {
+        const lastNum = parseInt(match[1], 10);
+        if (!isNaN(lastNum)) {
+          nextSessionSeq = Math.max(nextSessionSeq, lastNum + 1);
+        }
+      }
+    }
+
+    let sessionNumber = `CAJA-${currentYear}-${nextSessionSeq.toString().padStart(4, '0')}`;
+    while (await prisma.cashSession.findUnique({ where: { sessionNumber } })) {
+      nextSessionSeq++;
+      sessionNumber = `CAJA-${currentYear}-${nextSessionSeq.toString().padStart(4, '0')}`;
+    }
 
     // 4. Crear registro de apertura
     const newSession = await prisma.cashSession.create({

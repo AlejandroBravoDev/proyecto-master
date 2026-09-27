@@ -58,10 +58,6 @@ export class SaleService {
     discount?: number;
     items?: Array<{ productId: number; quantity: number; unitPrice?: number }>;
   }) {
-    // Generar el correlativo único de factura (ej: INV-2026-0001)
-    const count = await prisma.sale.count();
-    const invoiceNumber = `INV-${new Date().getFullYear()}-${(count + 1).toString().padStart(4, '0')}`;
-
     let subtotal = 0;
     const saleDetailsData: any[] = [];
 
@@ -118,25 +114,51 @@ export class SaleService {
     const calculatedDiscount = Number(data.discount || 0);
     const total = subtotal + calculatedTax - calculatedDiscount;
 
-    return prisma.sale.create({
-      data: {
-        invoiceNumber,
-        orderId: data.orderId ? Number(data.orderId) : null,
-        subtotal,
-        tax: calculatedTax,
-        discount: calculatedDiscount,
-        total,
-        paymentMethod: data.paymentMethod || 'CASH',
-        saleDetails: {
-          create: saleDetailsData
-        }
-      },
-      include: {
-        order: true,
-        saleDetails: {
-          include: { product: true }
+    return prisma.$transaction(async (tx) => {
+      // Generación segura y libre de colisiones de invoiceNumber (INV-YYYY-XXXX)
+      const currentYear = new Date().getFullYear();
+      const lastSale = await tx.sale.findFirst({
+        orderBy: { id: 'desc' },
+        select: { id: true, invoiceNumber: true }
+      });
+
+      let nextSaleSeq = (lastSale?.id ?? 0) + 1;
+      if (lastSale?.invoiceNumber) {
+        const match = lastSale.invoiceNumber.match(/(\d+)$/);
+        if (match) {
+          const lastNum = parseInt(match[1], 10);
+          if (!isNaN(lastNum)) {
+            nextSaleSeq = Math.max(nextSaleSeq, lastNum + 1);
+          }
         }
       }
+
+      let invoiceNumber = `INV-${currentYear}-${nextSaleSeq.toString().padStart(4, '0')}`;
+      while (await tx.sale.findUnique({ where: { invoiceNumber } })) {
+        nextSaleSeq++;
+        invoiceNumber = `INV-${currentYear}-${nextSaleSeq.toString().padStart(4, '0')}`;
+      }
+
+      return tx.sale.create({
+        data: {
+          invoiceNumber,
+          orderId: data.orderId ? Number(data.orderId) : null,
+          subtotal,
+          tax: calculatedTax,
+          discount: calculatedDiscount,
+          total,
+          paymentMethod: data.paymentMethod || 'CASH',
+          saleDetails: {
+            create: saleDetailsData
+          }
+        },
+        include: {
+          order: true,
+          saleDetails: {
+            include: { product: true }
+          }
+        }
+      });
     });
   }
 }
