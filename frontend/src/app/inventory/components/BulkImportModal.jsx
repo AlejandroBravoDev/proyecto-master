@@ -25,6 +25,7 @@ export default function BulkImportModal({
   const [result, setResult] = useState(null);
 
   const fileInputRef = useRef(null);
+  const isUploadingRef = useRef(false);
 
   if (!isOpen) return null;
 
@@ -72,17 +73,21 @@ export default function BulkImportModal({
     setFile(null);
     setResult(null);
     setError('');
+    isUploadingRef.current = false;
     if (fileInputRef.current) {
       fileInputRef.current.value = '';
     }
   };
 
   const handleUpload = async () => {
+    if (uploading || isUploadingRef.current) return;
+
     if (!file) {
       setError('Debes seleccionar o arrastrar un archivo de Excel.');
       return;
     }
 
+    isUploadingRef.current = true;
     setUploading(true);
     setError('');
 
@@ -95,6 +100,7 @@ export default function BulkImportModal({
     } catch (err) {
       setError(err.message || 'Ocurrió un error al procesar el archivo Excel.');
     } finally {
+      isUploadingRef.current = false;
       setUploading(false);
     }
   };

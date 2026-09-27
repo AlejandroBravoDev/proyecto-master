@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { X, Unlock, Banknote, Coins, AlertCircle, RefreshCw, DollarSign } from 'lucide-react';
 import { CASH_DENOMINATIONS, calculateDenominationsTotal, formatCurrency } from '../utils/cajaUtils';
 
@@ -11,8 +11,10 @@ export default function OpenCajaModal({
   const [notes, setNotes] = useState('');
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
+  const isSubmittingRef = useRef(false);
 
   useEffect(() => {
+    isSubmittingRef.current = false;
     if (isOpen) {
       setError('');
       setNotes('');
@@ -51,6 +53,8 @@ export default function OpenCajaModal({
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    if (saving || isSubmittingRef.current) return;
+
     setError('');
 
     if (totalBase <= 0) {
@@ -58,6 +62,7 @@ export default function OpenCajaModal({
       return;
     }
 
+    isSubmittingRef.current = true;
     setSaving(true);
     try {
       await onSubmit({
@@ -68,6 +73,7 @@ export default function OpenCajaModal({
     } catch (err) {
       setError(err.message || 'No se pudo abrir la caja registradora.');
     } finally {
+      isSubmittingRef.current = false;
       setSaving(false);
     }
   };

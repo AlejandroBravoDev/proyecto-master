@@ -26,6 +26,18 @@ export async function fetchCajaStatus() {
   return response.json();
 }
 
+function extractErrorMessage(errorData, fallbackMessage) {
+  if (!errorData) return fallbackMessage;
+  const baseMsg = errorData.error || errorData.message || fallbackMessage;
+  if (errorData.details) {
+    const detailsMsg = typeof errorData.details === 'object'
+      ? JSON.stringify(errorData.details)
+      : String(errorData.details);
+    return `${baseMsg}: ${detailsMsg}`;
+  }
+  return baseMsg;
+}
+
 /**
  * Opens a new cash register shift session with initial base float denominations.
  * @param {{ denominations: Object|Array, notes?: string }} data
@@ -43,7 +55,7 @@ export async function openCajaSession(data) {
 
   if (!response.ok) {
     const errorData = await response.json().catch(() => ({}));
-    throw new Error(errorData.error || `Error (${response.status}): No se pudo abrir la caja.`);
+    throw new Error(extractErrorMessage(errorData, `Error (${response.status}): No se pudo abrir la caja.`));
   }
 
   return response.json();
@@ -66,7 +78,7 @@ export async function closeCajaSession(data) {
 
   if (!response.ok) {
     const errorData = await response.json().catch(() => ({}));
-    throw new Error(errorData.error || `Error (${response.status}): No se pudo cerrar la caja.`);
+    throw new Error(extractErrorMessage(errorData, `Error (${response.status}): No se pudo cerrar la caja.`));
   }
 
   return response.json();

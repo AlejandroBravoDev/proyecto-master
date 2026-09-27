@@ -46,6 +46,21 @@ export async function fetchOrderById(id) {
 }
 
 /**
+ * Helper to extract clear error messages with details from backend response.
+ */
+function extractErrorMessage(errorData, fallbackMessage) {
+  if (!errorData) return fallbackMessage;
+  const baseMsg = errorData.error || errorData.message || fallbackMessage;
+  if (errorData.details) {
+    const detailsMsg = typeof errorData.details === 'object'
+      ? JSON.stringify(errorData.details)
+      : String(errorData.details);
+    return `${baseMsg}: ${detailsMsg}`;
+  }
+  return baseMsg;
+}
+
+/**
  * Creates a new order and triggers automatic warehouse inventory deduction.
  * @param {{
  *   items: Array<{ productId: number, quantity: number, unitPrice?: number, notes?: string }>,
@@ -65,7 +80,7 @@ export async function createOrder(data) {
 
   if (!response.ok) {
     const errorData = await response.json().catch(() => ({}));
-    throw new Error(errorData.error || `Error (${response.status}): No se pudo crear la comanda.`);
+    throw new Error(extractErrorMessage(errorData, `Error (${response.status}): No se pudo crear la comanda.`));
   }
 
   return response.json();
@@ -86,7 +101,7 @@ export async function deleteOrder(id) {
 
   if (!response.ok) {
     const errorData = await response.json().catch(() => ({}));
-    throw new Error(errorData.error || `Error (${response.status}): No se pudo eliminar la comanda.`);
+    throw new Error(extractErrorMessage(errorData, `Error (${response.status}): No se pudo eliminar la comanda.`));
   }
 
   return response.json();

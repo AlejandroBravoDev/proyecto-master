@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import { X, Plus, Trash2, FolderPlus, AlertCircle, RefreshCw } from 'lucide-react';
 import { createCategory, deleteCategory } from '../services/productService';
 import { confirmDialog, showErrorAlert, showSuccessToast } from '../../common/alertUtils';
@@ -14,11 +14,15 @@ export default function CategoryModal({
   const [saving, setSaving] = useState(false);
   const [deletingId, setDeletingId] = useState(null);
   const [error, setError] = useState('');
+  const isSubmittingRef = useRef(false);
+  const isDeletingRef = useRef(false);
 
   if (!isOpen) return null;
 
   const handleCreate = async (e) => {
     e.preventDefault();
+    if (saving || isSubmittingRef.current) return;
+
     setError('');
 
     if (!name.trim()) {
@@ -26,6 +30,7 @@ export default function CategoryModal({
       return;
     }
 
+    isSubmittingRef.current = true;
     setSaving(true);
     try {
       await createCategory({
@@ -41,11 +46,14 @@ export default function CategoryModal({
     } catch (err) {
       setError(err.message || 'Error al crear la categoría.');
     } finally {
+      isSubmittingRef.current = false;
       setSaving(false);
     }
   };
 
   const handleDelete = async (cat) => {
+    if (deletingId || isDeletingRef.current) return;
+
     setError('');
     const result = await confirmDialog({
       title: `¿Eliminar categoría "${cat.name}"?`,
@@ -55,6 +63,7 @@ export default function CategoryModal({
     });
 
     if (result.isConfirmed) {
+      isDeletingRef.current = true;
       setDeletingId(cat.id);
       try {
         await deleteCategory(cat.id);
@@ -65,6 +74,7 @@ export default function CategoryModal({
       } catch (err) {
         showErrorAlert('Error al eliminar categoría', err.message || 'No se pudo eliminar la categoría.');
       } finally {
+        isDeletingRef.current = false;
         setDeletingId(null);
       }
     }

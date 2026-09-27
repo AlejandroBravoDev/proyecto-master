@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import {
   X,
   Plus,
@@ -35,8 +35,10 @@ export default function CreateOrderModal({
 
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
+  const isSubmittingRef = useRef(false);
 
   useEffect(() => {
+    isSubmittingRef.current = false;
     if (isOpen) {
       setError('');
       setCart([]);
@@ -130,6 +132,8 @@ export default function CreateOrderModal({
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    if (saving || isSubmittingRef.current) return;
+
     setError('');
 
     if (cart.length === 0) {
@@ -137,6 +141,7 @@ export default function CreateOrderModal({
       return;
     }
 
+    isSubmittingRef.current = true;
     setSaving(true);
     try {
       const payload = {
@@ -154,6 +159,7 @@ export default function CreateOrderModal({
     } catch (err) {
       setError(err.message || 'Error al procesar la comanda.');
     } finally {
+      isSubmittingRef.current = false;
       setSaving(false);
     }
   };

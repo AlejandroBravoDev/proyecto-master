@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { X, SlidersHorizontal, ArrowUpRight, ArrowDownRight, RefreshCw } from 'lucide-react';
 import { ADJUSTMENT_REASONS, formatQuantity } from '../utils/inventoryUtils';
 
@@ -13,8 +13,10 @@ export default function StockAdjustmentModal({
   const [unitCost, setUnitCost] = useState(0);
   const [error, setError] = useState('');
   const [submitting, setSubmitting] = useState(false);
+  const isSubmittingRef = useRef(false);
 
   useEffect(() => {
+    isSubmittingRef.current = false;
     if (ingredient) {
       setQuantity(0);
       setReason('PURCHASE');
@@ -41,11 +43,14 @@ export default function StockAdjustmentModal({
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    if (submitting || isSubmittingRef.current) return;
+
     if (numQuantity === 0) {
       setError('La cantidad a ajustar no puede ser cero.');
       return;
     }
 
+    isSubmittingRef.current = true;
     setSubmitting(true);
     setError('');
 
@@ -67,6 +72,7 @@ export default function StockAdjustmentModal({
     } catch (err) {
       setError(err.message || 'Error al procesar el ajuste de stock.');
     } finally {
+      isSubmittingRef.current = false;
       setSubmitting(false);
     }
   };

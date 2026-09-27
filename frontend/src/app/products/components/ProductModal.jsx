@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { X, Plus, Trash2, ChefHat, Box, AlertCircle, RefreshCw } from 'lucide-react';
 import { fetchIngredientsForRecipe } from '../services/productService';
 
@@ -23,11 +23,13 @@ export default function ProductModal({
 
   const [error, setError] = useState('');
   const [saving, setSaving] = useState(false);
+  const isSubmittingRef = useRef(false);
 
   const isEditing = Boolean(initialData);
 
   // Populate or reset form on open
   useEffect(() => {
+    isSubmittingRef.current = false;
     if (isOpen) {
       setError('');
       if (initialData) {
@@ -119,6 +121,8 @@ export default function ProductModal({
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    if (saving || isSubmittingRef.current) return;
+
     setError('');
 
     if (!name.trim()) {
@@ -137,6 +141,7 @@ export default function ProductModal({
       return;
     }
 
+    isSubmittingRef.current = true;
     setSaving(true);
     try {
       const payload = {
@@ -164,6 +169,7 @@ export default function ProductModal({
     } catch (err) {
       setError(err.message || 'Error al guardar el producto.');
     } finally {
+      isSubmittingRef.current = false;
       setSaving(false);
     }
   };

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { X, Lock, Banknote, Coins, AlertCircle, RefreshCw, Scale } from 'lucide-react';
 import { CASH_DENOMINATIONS, calculateDenominationsTotal, formatCurrency } from '../utils/cajaUtils';
 import { confirmDialog } from '../../common/alertUtils';
@@ -13,8 +13,10 @@ export default function CloseCajaModal({
   const [closingNotes, setClosingNotes] = useState('');
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
+  const isSubmittingRef = useRef(false);
 
   useEffect(() => {
+    isSubmittingRef.current = false;
     if (isOpen) {
       setError('');
       setClosingNotes('');
@@ -52,7 +54,10 @@ export default function CloseCajaModal({
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    if (saving || isSubmittingRef.current) return;
+
     setError('');
+    isSubmittingRef.current = true;
 
     const confirmRes = await confirmDialog({
       title: '¿Confirmar cierre de caja?',
@@ -61,7 +66,10 @@ export default function CloseCajaModal({
       cancelButtonText: 'Revisar conteo',
     });
 
-    if (!confirmRes.isConfirmed) return;
+    if (!confirmRes.isConfirmed) {
+      isSubmittingRef.current = false;
+      return;
+    }
 
     setSaving(true);
     try {
@@ -73,6 +81,7 @@ export default function CloseCajaModal({
     } catch (err) {
       setError(err.message || 'No se pudo cerrar la caja registradora.');
     } finally {
+      isSubmittingRef.current = false;
       setSaving(false);
     }
   };

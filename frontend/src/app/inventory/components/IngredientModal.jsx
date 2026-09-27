@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { X, Save, Box } from 'lucide-react';
 import { MEASUREMENT_UNITS } from '../utils/inventoryUtils';
 
@@ -21,8 +21,10 @@ export default function IngredientModal({
 
   const [error, setError] = useState('');
   const [submitting, setSubmitting] = useState(false);
+  const isSubmittingRef = useRef(false);
 
   useEffect(() => {
+    isSubmittingRef.current = false;
     if (initialData) {
       setFormData({
         name: initialData.name || '',
@@ -49,11 +51,14 @@ export default function IngredientModal({
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    if (submitting || isSubmittingRef.current) return;
+
     if (!formData.name.trim()) {
       setError('El nombre del insumo es obligatorio.');
       return;
     }
 
+    isSubmittingRef.current = true;
     setSubmitting(true);
     setError('');
 
@@ -68,6 +73,7 @@ export default function IngredientModal({
     } catch (err) {
       setError(err.message || 'Ocurrió un error al guardar el insumo.');
     } finally {
+      isSubmittingRef.current = false;
       setSubmitting(false);
     }
   };
