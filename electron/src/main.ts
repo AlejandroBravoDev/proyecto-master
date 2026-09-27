@@ -2,7 +2,7 @@ import { app, BrowserWindow, dialog, ipcMain } from 'electron';
 import path from 'path';
 import fs from 'fs';
 import net from 'net';
-import { spawn, ChildProcess } from 'child_process';
+import { spawn, spawnSync, ChildProcess } from 'child_process';
 import http from 'http';
 
 interface DbConfig {
@@ -68,7 +68,7 @@ function findFreePort(startPort = 3001, maxAttempts = 50): Promise<number> {
       const server = net.createServer();
 
       server.once('error', (err: any) => {
-        if (err.code === 'EADDRINUSE') {
+        if (err.code === 'EADDRINUSE' || err.code === 'EACCES') {
           currentPort++;
           testNextPort();
         } else {
@@ -92,7 +92,7 @@ function findFreePort(startPort = 3001, maxAttempts = 50): Promise<number> {
 /**
  * Espera a que el backend responda exitosamente en el endpoint /health
  */
-function waitForBackend(port: number, timeoutMs = 25000): Promise<boolean> {
+function waitForBackend(port: number, timeoutMs = 45000): Promise<boolean> {
   const startTime = Date.now();
   return new Promise((resolve) => {
     const check = () => {
@@ -199,7 +199,7 @@ function terminateBackend(): void {
     console.log('[Electron] Deteniendo backend...');
     try {
       if (process.platform === 'win32' && backendProcess.pid) {
-        spawn('taskkill', ['/pid', String(backendProcess.pid), '/f', '/t'], { windowsHide: true });
+        spawnSync('taskkill', ['/pid', String(backendProcess.pid), '/f', '/t'], { windowsHide: true });
       } else {
         backendProcess.kill('SIGTERM');
       }
@@ -291,6 +291,13 @@ app.whenReady().then(async () => {
 
   } catch (error: any) {
     console.error('[Electron] Error crítico durante la inicialización:', error);
+    try {
+      const logFilePath = path.join(app.getPath('userData'), 'startup-error.log');
+      const logEntry = `[${new Date().toISOString()}] Error crítico durante la inicialización: ${error?.stack || error?.message || String(error)}\n`;
+      fs.appendFileSync(logFilePath, logEntry, 'utf-8');
+    } catch (logErr) {
+      console.error('[Electron] No se pudo escribir el archivo startup-error.log:', logErr);
+    }
     dialog.showErrorBox(
       'Sistema Restaurante - Error de Inicio',
       'No se pudo iniciar el servicio local del restaurante. Por favor verifique que la aplicación no esté bloqueada por un antivirus o reinicie el equipo.\n\nDetalle técnico guardado para soporte.'
