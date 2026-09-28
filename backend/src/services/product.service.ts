@@ -140,12 +140,28 @@ export class ProductService {
   }
 
   /**
-   * Elimina un producto por su ID.
+   * Elimina un producto por su ID, eliminando previamente todas las dependencias
+   * (detalles de comandas, detalles de ventas y receta asociada) dentro de una transacción
+   * atómica para evitar errores de claves foráneas (P2003).
    * @param id ID del producto
    */
   async deleteProduct(id: number) {
-    return prisma.product.delete({
-      where: { id }
+    return prisma.$transaction(async (tx) => {
+      // 1. Eliminar dependencias en comandas y ventas
+      await tx.orderDetail.deleteMany({ where: { productId: id } });
+      await tx.saleDetail.deleteMany({ where: { productId: id } });
+
+      // 2. Eliminar receta asociada y sus detalles si existen
+      const recipe = await tx.recipe.findUnique({ where: { productId: id } });
+      if (recipe) {
+        await tx.recipeDetail.deleteMany({ where: { recipeId: recipe.id } });
+        await tx.recipe.delete({ where: { id: recipe.id } });
+      }
+
+      // 3. Eliminar el producto
+      return tx.product.delete({
+        where: { id }
+      });
     });
   }
 }

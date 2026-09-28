@@ -138,12 +138,15 @@ export class IngredientService {
   }
 
   /**
-   * Elimina un insumo del catálogo.
+   * Elimina un insumo del catálogo eliminando previamente sus movimientos de inventario (Kardex)
+   * y sus asociaciones en recetas de manera atómica para evitar errores de claves foráneas (P2003).
    * @param id ID del insumo
    */
   async deleteIngredient(id: number) {
-    return prisma.ingredient.delete({
-      where: { id }
+    return prisma.$transaction(async (tx) => {
+      await tx.inventoryMovement.deleteMany({ where: { ingredientId: id } });
+      await tx.recipeDetail.deleteMany({ where: { ingredientId: id } });
+      return tx.ingredient.delete({ where: { id } });
     });
   }
 
