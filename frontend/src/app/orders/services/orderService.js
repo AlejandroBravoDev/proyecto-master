@@ -7,11 +7,20 @@
 import { ORDER_ENDPOINTS } from './endpoints';
 
 /**
- * Fetches the list of all orders with orderDetails, product info, and sale status.
+ * Fetches the list of orders with optional filtering by scope ('active' | 'all') or date ('YYYY-MM-DD').
+ * Defaults to ?scope=active (current open cash session).
+ * @param {{ scope?: 'active'|'all', date?: string }} [filters]
  * @returns {Promise<Array>}
  */
-export async function fetchOrders() {
-  const response = await fetch(ORDER_ENDPOINTS.ORDERS, {
+export async function fetchOrders(filters = { scope: 'active' }) {
+  const params = new URLSearchParams();
+  if (filters?.date) {
+    params.set('date', filters.date);
+  } else {
+    params.set('scope', filters?.scope || 'active');
+  }
+
+  const response = await fetch(`${ORDER_ENDPOINTS.ORDERS}?${params.toString()}`, {
     method: 'GET',
     headers: {
       'Accept': 'application/json',
@@ -20,6 +29,25 @@ export async function fetchOrders() {
 
   if (!response.ok) {
     throw new Error(`Error (${response.status}): No se pudieron cargar las comandas.`);
+  }
+
+  return response.json();
+}
+
+/**
+ * Fetches the current cash register status to validate before creating orders.
+ * @returns {Promise<{ isOpen: boolean, activeSession: Object|null }>}
+ */
+export async function fetchCajaStatusForOrders() {
+  const response = await fetch(ORDER_ENDPOINTS.CAJA_STATUS, {
+    method: 'GET',
+    headers: {
+      'Accept': 'application/json',
+    },
+  });
+
+  if (!response.ok) {
+    throw new Error(`Error (${response.status}): No se pudo verificar el estado de la caja.`);
   }
 
   return response.json();

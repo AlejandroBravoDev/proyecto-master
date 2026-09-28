@@ -1,12 +1,14 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
-import { X, Unlock, Banknote, Coins, AlertCircle, RefreshCw, DollarSign } from 'lucide-react';
+import { X, Unlock, Banknote, Coins, AlertCircle, RefreshCw, User } from 'lucide-react';
 import { CASH_DENOMINATIONS, calculateDenominationsTotal, formatCurrency } from '../utils/cajaUtils';
+import { useAuth } from '../../auth/AuthContext';
 
 export default function OpenCajaModal({
   isOpen,
   onClose,
   onSubmit,
 }) {
+  const { user } = useAuth();
   const [denominations, setDenominations] = useState({});
   const [notes, setNotes] = useState('');
   const [saving, setSaving] = useState(false);
@@ -68,6 +70,7 @@ export default function OpenCajaModal({
       await onSubmit({
         denominations,
         notes: notes.trim() || undefined,
+        userId: user?.id,
       });
       onClose();
     } catch (err) {
@@ -94,7 +97,10 @@ export default function OpenCajaModal({
             </div>
             <div>
               <h2 className="text-lg font-bold text-[#584235]">Apertura de Caja Registradora</h2>
-              <p className="text-xs text-slate-400">Ingresa el conteo de la base inicial para dar cambio</p>
+              <p className="text-xs text-slate-400">
+                Ingresa el conteo de la base inicial · Responsable:{' '}
+                <strong className="text-[#584235]">{user?.fullName || user?.username || 'Sistema'}</strong>
+              </p>
             </div>
           </div>
 

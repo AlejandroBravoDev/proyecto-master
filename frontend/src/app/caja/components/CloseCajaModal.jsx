@@ -1,7 +1,8 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
-import { X, Lock, Banknote, Coins, AlertCircle, RefreshCw, Scale } from 'lucide-react';
+import { X, Lock, Banknote, Coins, AlertCircle, RefreshCw } from 'lucide-react';
 import { CASH_DENOMINATIONS, calculateDenominationsTotal, formatCurrency } from '../utils/cajaUtils';
 import { confirmDialog } from '../../common/alertUtils';
+import { useAuth } from '../../auth/AuthContext';
 
 export default function CloseCajaModal({
   isOpen,
@@ -9,6 +10,7 @@ export default function CloseCajaModal({
   activeSession,
   onSubmit,
 }) {
+  const { user } = useAuth();
   const [denominations, setDenominations] = useState({});
   const [closingNotes, setClosingNotes] = useState('');
   const [saving, setSaving] = useState(false);
@@ -76,6 +78,7 @@ export default function CloseCajaModal({
       await onSubmit({
         denominations,
         closingNotes: closingNotes.trim() || undefined,
+        userId: user?.id,
       });
       onClose();
     } catch (err) {
@@ -105,7 +108,8 @@ export default function CloseCajaModal({
                 Cierre de Caja ({activeSession.sessionNumber})
               </h2>
               <p className="text-xs text-slate-400">
-                Registra el conteo final de monedas y billetes presentes en caja
+                Registra el conteo final · Cierra:{' '}
+                <strong className="text-[#584235]">{user?.fullName || user?.username || 'Sistema'}</strong>
               </p>
             </div>
           </div>
@@ -121,13 +125,22 @@ export default function CloseCajaModal({
         {/* Content Body */}
         <div className="p-6 overflow-y-auto space-y-5 flex-1">
           {/* Active Shift Info */}
-          <div className="flex items-center justify-between p-4 rounded-2xl bg-slate-50 border border-slate-200">
+          <div className="flex flex-wrap items-center justify-between gap-4 p-4 rounded-2xl bg-slate-50 border border-slate-200">
             <div>
               <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
                 Base Inicial de Apertura
               </span>
               <span className="text-base font-black text-[#584235]">
                 {formatCurrency(activeSession.initialAmount)}
+              </span>
+            </div>
+
+            <div>
+              <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
+                Abierta por
+              </span>
+              <span className="text-xs font-bold text-[#584235]">
+                {activeSession.openedByUser?.fullName || activeSession.openedByUser?.username || 'Sistema'}
               </span>
             </div>
 

@@ -11,5 +11,7 @@ export const CAJA_ENDPOINTS = {
   get CLOSE() { return `${getApiBaseUrl()}/api/caja/close`; },
   get HISTORY() { return `${getApiBaseUrl()}/api/caja/history`; },
   SESSION_DETAIL: (id) => `${getApiBaseUrl()}/api/caja/session/${id}`,
+  UPDATE_SESSION: (id) => `${getApiBaseUrl()}/api/caja/${id}`,
+  get USERS() { return `${getApiBaseUrl()}/api/users`; },
 };
 

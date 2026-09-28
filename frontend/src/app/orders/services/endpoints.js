@@ -10,5 +10,6 @@ export const ORDER_ENDPOINTS = {
   ORDER_DETAIL: (id) => `${getApiBaseUrl()}/api/orders/${id}`,
   get PRODUCTS() { return `${getApiBaseUrl()}/api/products`; },
   get CATEGORIES() { return `${getApiBaseUrl()}/api/categories`; },
+  get CAJA_STATUS() { return `${getApiBaseUrl()}/api/caja/status`; },
 };
 

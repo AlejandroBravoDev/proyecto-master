@@ -4,30 +4,68 @@ import OrderHeaderCard from './components/OrderHeaderCard';
 import OrderCard from './components/OrderCard';
 import CreateOrderModal from './components/CreateOrderModal';
 import OrderDetailModal from './components/OrderDetailModal';
-import { fetchOrders, createOrder, deleteOrder } from './services/orderService';
+import {
+  fetchOrders,
+  createOrder,
+  deleteOrder,
+  fetchCajaStatusForOrders,
+} from './services/orderService';
 import { confirmDialog, showErrorAlert, showSuccessToast } from '../common/alertUtils';
+import { useAuth } from '../auth/AuthContext';
+
+function getTodayDateString() {
+  const now = new Date();
+  const year = now.getFullYear();
+  const month = String(now.getMonth() + 1).padStart(2, '0');
+  const day = String(now.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
 
 export default function OrdersPage() {
+  const { user } = useAuth();
+  const isAdmin = user?.role === 'ADMIN';
+
   const [orders, setOrders] = useState([]);
+  const [cajaStatus, setCajaStatus] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
-  // Search filter
+  // Search & Admin Scope/Date filters
   const [searchTerm, setSearchTerm] = useState('');
+  const [filterMode, setFilterMode] = useState('active'); // 'active' | 'date' | 'all'
+  const [selectedDate, setSelectedDate] = useState(getTodayDateString);
 
   // Modals state
   const [createModalOpen, setCreateModalOpen] = useState(false);
   const [detailModalOpen, setDetailModalOpen] = useState(false);
   const [selectedOrder, setSelectedOrder] = useState(null);
 
-  // Load orders
+  // Build query filters based on role and filterMode
+  const queryFilters = useMemo(() => {
+    if (!isAdmin) {
+      return { scope: 'active' };
+    }
+    if (filterMode === 'date') {
+      return { date: selectedDate || getTodayDateString() };
+    }
+    if (filterMode === 'all') {
+      return { scope: 'all' };
+    }
+    return { scope: 'active' };
+  }, [isAdmin, filterMode, selectedDate]);
+
+  // Load orders and caja status
   const loadData = useCallback(() => {
     setLoading(true);
     setError(null);
 
-    fetchOrders()
-      .then((data) => {
-        setOrders(Array.isArray(data) ? data : []);
+    Promise.all([
+      fetchOrders(queryFilters),
+      fetchCajaStatusForOrders().catch(() => ({ isOpen: false, activeSession: null })),
+    ])
+      .then(([ordersData, statusData]) => {
+        setOrders(Array.isArray(ordersData) ? ordersData : []);
+        setCajaStatus(statusData);
         setLoading(false);
       })
       .catch((err) => {
@@ -35,7 +73,7 @@ export default function OrdersPage() {
         setError(err.message || 'No se pudo conectar con el servidor para cargar las comandas.');
         setLoading(false);
       });
-  }, []);
+  }, [queryFilters]);
 
   useEffect(() => {
     loadData();
@@ -56,6 +94,31 @@ export default function OrdersPage() {
       return matchesSearch;
     });
   }, [orders, searchTerm]);
+
+  // Handler when clicking "Nueva Comanda"
+  const handleNewOrderClick = async () => {
+    try {
+      const latestStatus = await fetchCajaStatusForOrders();
+      setCajaStatus(latestStatus);
+      if (!latestStatus?.isOpen) {
+        await showErrorAlert(
+          'Caja Cerrada',
+          'Caja Cerrada: Debes abrir un turno de caja en el módulo de Caja antes de poder registrar comandas'
+        );
+        return;
+      }
+      setCreateModalOpen(true);
+    } catch {
+      if (!cajaStatus?.isOpen) {
+        await showErrorAlert(
+          'Caja Cerrada',
+          'Caja Cerrada: Debes abrir un turno de caja en el módulo de Caja antes de poder registrar comandas'
+        );
+        return;
+      }
+      setCreateModalOpen(true);
+    }
+  };
 
   // Handlers
   const handleCreateOrder = async (payload) => {
@@ -94,9 +157,15 @@ export default function OrdersPage() {
       <OrderHeaderCard
         searchTerm={searchTerm}
         onSearchChange={setSearchTerm}
-        onNewOrderClick={() => setCreateModalOpen(true)}
+        onNewOrderClick={handleNewOrderClick}
         totalOrdersCount={orders.length}
         totalSalesAmount={totalSalesAmount}
+        isAdmin={isAdmin}
+        filterMode={filterMode}
+        onFilterModeChange={setFilterMode}
+        selectedDate={selectedDate}
+        onSelectedDateChange={setSelectedDate}
+        cajaIsOpen={Boolean(cajaStatus?.isOpen)}
       />
 
       {/* Orders Grid / States */}
@@ -130,11 +199,14 @@ export default function OrdersPage() {
           <p className="text-xs text-slate-400 max-w-sm mx-auto">
             {searchTerm
               ? 'No se encontraron pedidos con el término de búsqueda.'
+              : filterMode === 'date'
+              ? `No se encontraron comandas para la fecha seleccionada (${selectedDate}).`
               : 'Empieza registrando una nueva comanda desde el punto de pedidos.'}
           </p>
           <div className="pt-2">
             <button
-              onClick={() => setCreateModalOpen(true)}
+              type="button"
+              onClick={handleNewOrderClick}
               className="inline-flex items-center space-x-2 px-5 py-2.5 rounded-2xl bg-[#E63946] hover:bg-red-700 text-white text-xs font-bold shadow-md shadow-red-500/20 transition-all cursor-pointer"
             >
               <Plus className="w-4 h-4" />

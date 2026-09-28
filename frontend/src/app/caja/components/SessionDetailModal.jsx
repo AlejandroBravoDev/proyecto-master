@@ -95,8 +95,8 @@ export default function SessionDetailModal({
                 </div>
               </div>
 
-              {/* Timestamps & Notes */}
-              <div className="p-3.5 rounded-2xl bg-[#F8F9FA] border border-slate-200/80 space-y-1">
+              {/* Timestamps, Users & Notes */}
+              <div className="p-3.5 rounded-2xl bg-[#F8F9FA] border border-slate-200/80 space-y-2">
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between text-slate-500 gap-1">
                   <span>
                     <strong>Apertura:</strong> {formatDateTime(session.openedAt)}
@@ -107,6 +107,20 @@ export default function SessionDetailModal({
                     </span>
                   )}
                 </div>
+
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between text-[#584235] gap-1 pt-1 border-t border-slate-200/60">
+                  <span>
+                    <strong>Abierta por:</strong>{' '}
+                    {session.openedByUser?.fullName || session.openedByUser?.username || 'Sistema'}
+                  </span>
+                  {isClosed && (
+                    <span>
+                      <strong>Cerrada por:</strong>{' '}
+                      {session.closedByUser?.fullName || session.closedByUser?.username || 'Sistema'}
+                    </span>
+                  )}
+                </div>
+
                 {session.notes && (
                   <p className="text-slate-600">
                     <strong>Nota de Apertura:</strong> {session.notes}

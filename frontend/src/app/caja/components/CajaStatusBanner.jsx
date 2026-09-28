@@ -1,5 +1,5 @@
 import React from 'react';
-import { Lock, Unlock, Clock, Banknote, History } from 'lucide-react';
+import { Lock, Unlock, Clock, Banknote, History, User } from 'lucide-react';
 import { formatCurrency, formatDateTime } from '../utils/cajaUtils';
 
 export default function CajaStatusBanner({
@@ -13,6 +13,11 @@ export default function CajaStatusBanner({
   const lastClosedSession = cajaStatus?.lastClosedSession;
 
   if (isOpen && activeSession) {
+    const openedByName =
+      activeSession.openedByUser?.fullName ||
+      activeSession.openedByUser?.username ||
+      'Sistema';
+
     return (
       <div className="bg-gradient-to-r from-emerald-900 via-slate-900 to-slate-900 rounded-3xl p-6 text-white shadow-xl border border-emerald-500/30 relative overflow-hidden">
         {/* Glow backdrop */}
@@ -34,9 +39,15 @@ export default function CajaStatusBanner({
               </span>
             </div>
 
-            <div className="flex items-center space-x-2 text-xs text-slate-300">
-              <Clock className="w-3.5 h-3.5 text-emerald-400" />
-              <span>Apertura: {formatDateTime(activeSession.openedAt)}</span>
+            <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-slate-300">
+              <div className="flex items-center space-x-1.5">
+                <Clock className="w-3.5 h-3.5 text-emerald-400" />
+                <span>Apertura: {formatDateTime(activeSession.openedAt)}</span>
+              </div>
+              <div className="flex items-center space-x-1.5 text-emerald-300 font-semibold">
+                <User className="w-3.5 h-3.5 text-emerald-400" />
+                <span>Abierta por: {openedByName}</span>
+              </div>
               {activeSession.notes && (
                 <span className="text-slate-400 italic">· "{activeSession.notes}"</span>
               )}
@@ -96,13 +107,19 @@ export default function CajaStatusBanner({
 
         {/* Center: Last Session summary if available */}
         {lastClosedSession && (
-          <div className="bg-white/5 rounded-2xl p-3.5 border border-white/10 flex items-center space-x-4 text-xs">
+          <div className="bg-white/5 rounded-2xl p-3.5 border border-white/10 flex flex-wrap items-center gap-4 text-xs">
             <div>
               <span className="text-[10px] text-slate-400 font-bold uppercase block">
                 Último Cierre ({lastClosedSession.sessionNumber})
               </span>
-              <span className="font-bold text-slate-200">
+              <span className="font-bold text-slate-200 block">
                 {formatDateTime(lastClosedSession.closedAt)}
+              </span>
+              <span className="text-[11px] text-slate-400 block mt-0.5">
+                Abrió: {lastClosedSession.openedByUser?.fullName || lastClosedSession.openedByUser?.username || 'Sistema'}
+                {lastClosedSession.closedByUser?.fullName && (
+                  <> · Cerró: {lastClosedSession.closedByUser.fullName}</>
+                )}
               </span>
             </div>
 

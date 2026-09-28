@@ -1,5 +1,5 @@
 import React from 'react';
-import { Eye, Trash2, Clock, FileText } from 'lucide-react';
+import { Eye, Trash2, Clock, FileText, Lock } from 'lucide-react';
 import { formatCurrency, formatDateTime } from '../utils/orderUtils';
 
 export default function OrderCard({
@@ -8,24 +8,39 @@ export default function OrderCard({
   onDelete,
 }) {
   const orderDetails = order.orderDetails || [];
+  const isClosedShift = order.active === false;
 
   return (
-    <div className="bg-white rounded-3xl border border-slate-200/80 shadow-sm transition-all duration-300 p-6 flex flex-col justify-between hover:shadow-lg hover:-translate-y-1 relative overflow-hidden">
+    <div
+      className={`bg-white rounded-3xl border shadow-sm transition-all duration-300 p-6 flex flex-col justify-between hover:shadow-lg hover:-translate-y-1 relative overflow-hidden ${
+        isClosedShift ? 'border-slate-200/90 bg-slate-50/30' : 'border-slate-200/80'
+      }`}
+    >
       {/* Top Accent Strip */}
-      <div className="absolute top-0 left-0 right-0 h-1.5 bg-[#E63946]" />
+      <div
+        className={`absolute top-0 left-0 right-0 h-1.5 ${
+          isClosedShift ? 'bg-slate-400' : 'bg-[#E63946]'
+        }`}
+      />
 
       <div className="space-y-4">
         {/* Ticket Top Info */}
-        <div className="flex items-center justify-between gap-2">
+        <div className="flex items-center justify-between gap-2 flex-wrap">
           <div className="flex items-center space-x-2">
             <span className="text-lg font-black text-[#584235] tracking-tight">
               {order.number}
             </span>
+            {isClosedShift && (
+              <span className="inline-flex items-center space-x-1 px-2 py-0.5 rounded-full bg-slate-100 border border-slate-200 text-slate-500 text-[10px] font-bold">
+                <Lock className="w-2.5 h-2.5" />
+                <span>Turno cerrado</span>
+              </span>
+            )}
           </div>
 
           <div className="text-xs text-slate-400 font-medium flex items-center space-x-1">
             <Clock className="w-3.5 h-3.5" />
-            <span>{formatDateTime(order.createdAt)}</span>
+            <span>{formatDateTime(order.createdAt || order.date)}</span>
           </div>
         </div>
 

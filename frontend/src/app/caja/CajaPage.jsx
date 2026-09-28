@@ -1,39 +1,50 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
-import { AlertCircle, RefreshCw, History, Unlock } from 'lucide-react';
+import { AlertCircle, RefreshCw } from 'lucide-react';
 import CajaStatusBanner from './components/CajaStatusBanner';
 import SessionHistoryTable from './components/SessionHistoryTable';
 import OpenCajaModal from './components/OpenCajaModal';
 import CloseCajaModal from './components/CloseCajaModal';
 import SessionDetailModal from './components/SessionDetailModal';
+import EditCajaSessionModal from './components/EditCajaSessionModal';
 import {
   fetchCajaStatus,
   fetchCajaHistory,
   openCajaSession,
-  closeCajaSession
+  closeCajaSession,
+  updateCajaSession,
+  fetchUsersForCaja,
 } from './services/cajaService';
 import { showSuccessToast, showErrorAlert } from '../common/alertUtils';
+import { useAuth } from '../auth/AuthContext';
 
 export default function CajaPage() {
+  const { user } = useAuth();
+  const isAdmin = user?.role === 'ADMIN';
+
   const [cajaStatus, setCajaStatus] = useState(null);
   const [sessions, setSessions] = useState([]);
+  const [employees, setEmployees] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
-  // Search filter
+  // Search & Employee filters
   const [searchTerm, setSearchTerm] = useState('');
+  const [selectedEmployeeId, setSelectedEmployeeId] = useState('');
 
   // Modals state
   const [openCajaModalOpen, setOpenCajaModalOpen] = useState(false);
   const [closeCajaModalOpen, setCloseCajaModalOpen] = useState(false);
   const [selectedSessionId, setSelectedSessionId] = useState(null);
   const [detailModalOpen, setDetailModalOpen] = useState(false);
+  const [editingSession, setEditingSession] = useState(null);
+  const [editModalOpen, setEditModalOpen] = useState(false);
 
   // Load status and history
   const loadData = useCallback(() => {
     setLoading(true);
     setError(null);
 
-    Promise.all([fetchCajaStatus(), fetchCajaHistory(50, 1)])
+    Promise.all([fetchCajaStatus(), fetchCajaHistory(100, 1)])
       .then(([statusData, historyData]) => {
         setCajaStatus(statusData);
         setSessions(historyData.sessions || []);
@@ -50,42 +61,84 @@ export default function CajaPage() {
     loadData();
   }, [loadData]);
 
-  // Filtered sessions
+  // Load employees list if user is ADMIN
+  useEffect(() => {
+    if (isAdmin) {
+      fetchUsersForCaja()
+        .then((usersList) => {
+          setEmployees(usersList);
+        })
+        .catch((err) => {
+          console.error('Error cargando lista de empleados en Caja:', err);
+        });
+    }
+  }, [isAdmin]);
+
+  // Filtered sessions by searchTerm and selectedEmployeeId
   const filteredSessions = useMemo(() => {
     return sessions.filter((s) => {
+      if (selectedEmployeeId) {
+        const openedId = s.openedByUserId ?? s.openedByUser?.id;
+        if (String(openedId) !== String(selectedEmployeeId)) {
+          return false;
+        }
+      }
+
+      const term = searchTerm.toLowerCase();
+      const openedByName = (s.openedByUser?.fullName || s.openedByUser?.username || '').toLowerCase();
       const matchesSearch =
-        s.sessionNumber.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        (s.notes && s.notes.toLowerCase().includes(searchTerm.toLowerCase())) ||
-        (s.closingNotes && s.closingNotes.toLowerCase().includes(searchTerm.toLowerCase()));
+        s.sessionNumber.toLowerCase().includes(term) ||
+        openedByName.includes(term) ||
+        (s.notes && s.notes.toLowerCase().includes(term)) ||
+        (s.closingNotes && s.closingNotes.toLowerCase().includes(term));
 
       return matchesSearch;
     });
-  }, [sessions, searchTerm]);
+  }, [sessions, searchTerm, selectedEmployeeId]);
 
   // Handlers
   const handleOpenCaja = async (payload) => {
     try {
-      const session = await openCajaSession(payload);
+      const session = await openCajaSession({
+        ...payload,
+        userId: payload.userId ?? user?.id,
+      });
       showSuccessToast(`Caja abierta exitosamente (${session.sessionNumber || ''}).`);
       loadData();
     } catch (err) {
       showErrorAlert('Error al abrir caja', err.message || 'No se pudo abrir la caja registradora.');
+      throw err;
     }
   };
 
   const handleCloseCaja = async (payload) => {
     try {
-      const closed = await closeCajaSession(payload);
+      const closed = await closeCajaSession({
+        ...payload,
+        userId: payload.userId ?? user?.id,
+      });
       showSuccessToast(`Turno cerrado y arqueado correctamente (${closed.sessionNumber || ''}).`);
       loadData();
     } catch (err) {
       showErrorAlert('Error al cerrar caja', err.message || 'No se pudo cerrar la caja registradora.');
+      throw err;
     }
   };
 
   const handleViewSessionDetail = (id) => {
     setSelectedSessionId(id);
     setDetailModalOpen(true);
+  };
+
+  const handleOpenEditSession = (session) => {
+    setEditingSession(session);
+    setEditModalOpen(true);
+  };
+
+  const handleUpdateSession = async (id, payload) => {
+    const updated = await updateCajaSession(id, payload);
+    showSuccessToast(`Sesión ${updated.sessionNumber || ''} actualizada correctamente.`);
+    loadData();
   };
 
   return (
@@ -132,6 +185,11 @@ export default function CajaPage() {
             searchTerm={searchTerm}
             onSearchChange={setSearchTerm}
             onViewSessionDetail={handleViewSessionDetail}
+            onEditSession={handleOpenEditSession}
+            isAdmin={isAdmin}
+            employees={employees}
+            selectedEmployeeId={selectedEmployeeId}
+            onEmployeeChange={setSelectedEmployeeId}
           />
         )}
       </div>
@@ -156,6 +214,17 @@ export default function CajaPage() {
         isOpen={detailModalOpen}
         onClose={() => setDetailModalOpen(false)}
         sessionId={selectedSessionId}
+      />
+
+      {/* Modal: Admin Edit Cash Session */}
+      <EditCajaSessionModal
+        isOpen={editModalOpen}
+        onClose={() => {
+          setEditModalOpen(false);
+          setEditingSession(null);
+        }}
+        session={editingSession}
+        onSubmit={handleUpdateSession}
       />
     </div>
   );

@@ -15,6 +15,7 @@ import {
 } from 'lucide-react';
 import { fetchProductsForOrders, fetchCategoriesForOrders } from '../services/orderService';
 import { formatCurrency } from '../utils/orderUtils';
+import { showErrorAlert } from '../../common/alertUtils';
 
 export default function CreateOrderModal({
   isOpen,
@@ -157,7 +158,18 @@ export default function CreateOrderModal({
       await onSubmit(payload);
       onClose();
     } catch (err) {
-      setError(err.message || 'Error al procesar la comanda.');
+      const errMsg = err.message || 'Error al procesar la comanda.';
+      setError(errMsg);
+      if (
+        errMsg.toLowerCase().includes('caja está cerrada') ||
+        errMsg.toLowerCase().includes('caja cerrada') ||
+        errMsg.includes('CAJA_CERRADA')
+      ) {
+        showErrorAlert(
+          'Caja Cerrada',
+          'Caja Cerrada: Debes abrir un turno de caja en el módulo de Caja antes de poder registrar comandas'
+        );
+      }
     } finally {
       isSubmittingRef.current = false;
       setSaving(false);
