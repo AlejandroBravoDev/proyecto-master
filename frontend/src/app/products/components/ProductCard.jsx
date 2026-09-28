@@ -7,6 +7,7 @@ export default function ProductCard({
   onEdit,
   onDelete,
   onToggleAvailability,
+  isAdmin = true,
 }) {
   const [toggling, setToggling] = useState(false);
 
@@ -115,23 +116,26 @@ export default function ProductCard({
             )}
           </button>
 
-          {/* Edit Button */}
-          <button
-            onClick={() => onEdit(product)}
-            title="Editar producto"
-            className="p-2 rounded-xl text-slate-400 hover:text-[#584235] hover:bg-slate-100 transition-colors cursor-pointer"
-          >
-            <Edit2 className="w-4 h-4" />
-          </button>
+          {/* Edit & Delete Buttons (Admin Only) */}
+          {isAdmin && (
+            <>
+              <button
+                onClick={() => onEdit(product)}
+                title="Editar producto"
+                className="p-2 rounded-xl text-slate-400 hover:text-[#584235] hover:bg-slate-100 transition-colors cursor-pointer"
+              >
+                <Edit2 className="w-4 h-4" />
+              </button>
 
-          {/* Delete Button */}
-          <button
-            onClick={() => onDelete(product)}
-            title="Eliminar producto"
-            className="p-2 rounded-xl text-slate-400 hover:text-[#E63946] hover:bg-rose-50 transition-colors cursor-pointer"
-          >
-            <Trash2 className="w-4 h-4" />
-          </button>
+              <button
+                onClick={() => onDelete(product)}
+                title="Eliminar producto"
+                className="p-2 rounded-xl text-slate-400 hover:text-[#E63946] hover:bg-rose-50 transition-colors cursor-pointer"
+              >
+                <Trash2 className="w-4 h-4" />
+              </button>
+            </>
+          )}
         </div>
       </div>
     </div>

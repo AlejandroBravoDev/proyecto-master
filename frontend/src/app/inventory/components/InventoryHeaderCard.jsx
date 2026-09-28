@@ -18,6 +18,7 @@ export default function InventoryHeaderCard({
   onImportExcelClick,
   downloadingTemplate = false,
   exportingExcel = false,
+  isAdmin = true,
 }) {
   return (
     <div className="bg-white rounded-3xl p-6 md:p-8 border border-slate-200/80 shadow-sm space-y-6">
@@ -32,7 +33,7 @@ export default function InventoryHeaderCard({
           </p>
         </div>
 
-        {/* Action Buttons: Kardex Global + Nuevo Insumo */}
+        {/* Action Buttons: Kardex Global + Nuevo Insumo (Admin Only) */}
         <div className="flex items-center gap-3">
           <button
             onClick={onViewKardexClick}
@@ -42,13 +43,15 @@ export default function InventoryHeaderCard({
             <span>Kardex Global</span>
           </button>
 
-          <button
-            onClick={onNewIngredientClick}
-            className="flex items-center space-x-2 px-5 py-2.5 rounded-2xl bg-[#E63946] hover:bg-red-700 text-white text-xs font-bold shadow-lg shadow-red-500/20 transition-all cursor-pointer"
-          >
-            <Plus className="w-4 h-4" />
-            <span>Nuevo Insumo</span>
-          </button>
+          {isAdmin && (
+            <button
+              onClick={onNewIngredientClick}
+              className="flex items-center space-x-2 px-5 py-2.5 rounded-2xl bg-[#E63946] hover:bg-red-700 text-white text-xs font-bold shadow-lg shadow-red-500/20 transition-all cursor-pointer"
+            >
+              <Plus className="w-4 h-4" />
+              <span>Nuevo Insumo</span>
+            </button>
+          )}
         </div>
       </div>
 
@@ -66,7 +69,7 @@ export default function InventoryHeaderCard({
           />
         </div>
 
-        {/* Excel Actions Group (where switcher previously was) */}
+        {/* Excel Actions Group */}
         <div className="flex flex-wrap items-center gap-2.5 self-start lg:self-auto">
           {/* Download Template */}
           <button
@@ -90,15 +93,17 @@ export default function InventoryHeaderCard({
             <span>{exportingExcel ? 'Exportando...' : 'Exportar Excel'}</span>
           </button>
 
-          {/* Bulk Import */}
-          <button
-            onClick={onImportExcelClick}
-            title="Subir archivo Excel para importar insumos masivamente"
-            className="flex items-center space-x-2 px-4 py-2.5 rounded-2xl bg-emerald-50 hover:bg-emerald-100 text-emerald-700 text-xs font-bold transition-all cursor-pointer border border-emerald-200"
-          >
-            <UploadCloud className="w-4 h-4 text-emerald-600" />
-            <span>Importar Masivo</span>
-          </button>
+          {/* Bulk Import (Admin Only) */}
+          {isAdmin && (
+            <button
+              onClick={onImportExcelClick}
+              title="Subir archivo Excel para importar insumos masivamente"
+              className="flex items-center space-x-2 px-4 py-2.5 rounded-2xl bg-emerald-50 hover:bg-emerald-100 text-emerald-700 text-xs font-bold transition-all cursor-pointer border border-emerald-200"
+            >
+              <UploadCloud className="w-4 h-4 text-emerald-600" />
+              <span>Importar Masivo</span>
+            </button>
+          )}
         </div>
       </div>
     </div>

@@ -13,8 +13,10 @@ import {
   deleteProduct,
 } from './services/productService';
 import { confirmDialog, showErrorAlert } from '../common/alertUtils';
+import { useAuth } from '../auth/AuthContext';
 
 export default function ProductsPage() {
+  const { isAdmin } = useAuth();
   const [products, setProducts] = useState([]);
   const [categories, setCategories] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -101,11 +103,13 @@ export default function ProductsPage() {
 
   // Modal Handlers
   const handleOpenCreateProduct = () => {
+    if (!isAdmin) return;
     setSelectedProduct(null);
     setProductModalOpen(true);
   };
 
   const handleOpenEditProduct = (item) => {
+    if (!isAdmin) return;
     setSelectedProduct(item);
     setProductModalOpen(true);
   };
@@ -128,6 +132,7 @@ export default function ProductsPage() {
   };
 
   const handleDeleteProduct = async (item) => {
+    if (!isAdmin) return;
     const result = await confirmDialog({
       title: `¿Eliminar "${item.name}"?`,
       text: 'El producto se eliminará definitivamente del menú de ventas.',
@@ -178,6 +183,7 @@ export default function ProductsPage() {
         onAvailabilityFilterChange={setAvailabilityFilter}
         onNewProductClick={handleOpenCreateProduct}
         onManageCategoriesClick={() => setCategoryModalOpen(true)}
+        isAdmin={isAdmin}
       />
 
       {/* CONTAINER 2: Products Grid / States */}
@@ -211,15 +217,17 @@ export default function ProductsPage() {
           <p className="text-xs text-slate-400 max-w-sm mx-auto">
             No hay productos registrados con los filtros o término de búsqueda aplicados.
           </p>
-          <div className="pt-2">
-            <button
-              onClick={handleOpenCreateProduct}
-              className="inline-flex items-center space-x-2 px-5 py-2.5 rounded-2xl bg-[#E63946] hover:bg-red-700 text-white text-xs font-bold shadow-md shadow-red-500/20 transition-all cursor-pointer"
-            >
-              <Plus className="w-4 h-4" />
-              <span>Crear Primer Producto</span>
-            </button>
-          </div>
+          {isAdmin && (
+            <div className="pt-2">
+              <button
+                onClick={handleOpenCreateProduct}
+                className="inline-flex items-center space-x-2 px-5 py-2.5 rounded-2xl bg-[#E63946] hover:bg-red-700 text-white text-xs font-bold shadow-md shadow-red-500/20 transition-all cursor-pointer"
+              >
+                <Plus className="w-4 h-4" />
+                <span>Crear Primer Producto</span>
+              </button>
+            </div>
+          )}
         </div>
       ) : (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
@@ -230,27 +238,33 @@ export default function ProductsPage() {
               onEdit={handleOpenEditProduct}
               onDelete={handleDeleteProduct}
               onToggleAvailability={handleToggleAvailability}
+              isAdmin={isAdmin}
             />
           ))}
         </div>
       )}
 
       {/* Modal: Create/Edit Product */}
-      <ProductModal
-        isOpen={productModalOpen}
-        onClose={() => setProductModalOpen(false)}
-        onSubmit={handleSaveProduct}
-        categories={categories}
-        initialData={selectedProduct}
-      />
+      {isAdmin && (
+        <ProductModal
+          isOpen={productModalOpen}
+          onClose={() => setProductModalOpen(false)}
+          onSubmit={handleSaveProduct}
+          categories={categories}
+          initialData={selectedProduct}
+        />
+      )}
 
       {/* Modal: Manage Categories */}
-      <CategoryModal
-        isOpen={categoryModalOpen}
-        onClose={() => setCategoryModalOpen(false)}
-        categories={categories}
-        onCategoriesChanged={loadData}
-      />
+      {isAdmin && (
+        <CategoryModal
+          isOpen={categoryModalOpen}
+          onClose={() => setCategoryModalOpen(false)}
+          categories={categories}
+          onCategoriesChanged={loadData}
+        />
+      )}
     </div>
   );
 }
+

@@ -8,6 +8,7 @@ export default function ProductHeaderCard({
   onAvailabilityFilterChange,
   onNewProductClick,
   onManageCategoriesClick,
+  isAdmin = true,
 }) {
   const availabilityTabs = [
     { id: 'all', label: 'Todos los Estados', icon: Grid },
@@ -28,24 +29,26 @@ export default function ProductHeaderCard({
           </p>
         </div>
 
-        {/* Action Buttons */}
-        <div className="flex items-center gap-3">
-          <button
-            onClick={onManageCategoriesClick}
-            className="flex items-center space-x-2 px-4 py-2.5 rounded-2xl bg-slate-100 hover:bg-slate-200 text-[#584235] text-xs font-bold transition-all cursor-pointer border border-slate-200"
-          >
-            <FolderPlus className="w-4 h-4 text-slate-500" />
-            <span>Categorías</span>
-          </button>
+        {/* Action Buttons (Only for Admin) */}
+        {isAdmin && (
+          <div className="flex items-center gap-3">
+            <button
+              onClick={onManageCategoriesClick}
+              className="flex items-center space-x-2 px-4 py-2.5 rounded-2xl bg-slate-100 hover:bg-slate-200 text-[#584235] text-xs font-bold transition-all cursor-pointer border border-slate-200"
+            >
+              <FolderPlus className="w-4 h-4 text-slate-500" />
+              <span>Categorías</span>
+            </button>
 
-          <button
-            onClick={onNewProductClick}
-            className="flex items-center space-x-2 px-5 py-2.5 rounded-2xl bg-[#E63946] hover:bg-red-700 text-white text-xs font-bold shadow-lg shadow-red-500/20 transition-all cursor-pointer"
-          >
-            <Plus className="w-4 h-4" />
-            <span>Nuevo Producto</span>
-          </button>
-        </div>
+            <button
+              onClick={onNewProductClick}
+              className="flex items-center space-x-2 px-5 py-2.5 rounded-2xl bg-[#E63946] hover:bg-red-700 text-white text-xs font-bold shadow-lg shadow-red-500/20 transition-all cursor-pointer"
+            >
+              <Plus className="w-4 h-4" />
+              <span>Nuevo Producto</span>
+            </button>
+          </div>
+        )}
       </div>
 
       {/* Lower Row: Search Bar on Left + Availability Switcher on Right */}
