@@ -3,10 +3,11 @@
  * SERVICIO DE CAJA (MODEL/SERVICE LAYER)
  * ====================================================
  * Administra exclusivamente el control de apertura y cierre de caja:
- * - Apertura de caja: ingreso de la base inicial con desglose de monedas y billetes
- * - Consulta de estado en tiempo real (si está abierta o cerrada)
- * - Cierre de caja: ingreso del conteo final de monedas y billetes al final del día/turno
- * - Historial y auditoría de sesiones de caja
+ * - Apertura de caja: ingreso de la base inicial con desglose de monedas y billetes y auditoría de usuario
+ * - Consulta de estado en tiempo real (si está abierta o cerrada) con usuario responsable
+ * - Cierre de caja: ingreso del conteo final, desactivación/archivado de comandas activas y auditoría
+ * - Historial y auditoría de sesiones de caja con filtrado por usuario
+ * - Edición administrativa de sesiones de caja
  */
 
 import prisma from '../prisma/client';
@@ -17,6 +18,14 @@ export interface DenominationItem {
 }
 
 export type DenominationsInput = Record<string, number> | DenominationItem[];
+
+const USER_SELECT_FIELDS = {
+  select: {
+    id: true,
+    fullName: true,
+    username: true
+  }
+};
 
 export class CajaService {
   /**
@@ -61,13 +70,17 @@ export class CajaService {
    */
   async getActiveSessionEntity() {
     return prisma.cashSession.findFirst({
-      where: { status: 'OPEN' }
+      where: { status: 'OPEN' },
+      include: {
+        openedByUser: USER_SELECT_FIELDS,
+        closedByUser: USER_SELECT_FIELDS
+      }
     });
   }
 
   /**
    * Consulta el estado en tiempo real de la caja (abierta o cerrada).
-   * Si está abierta, retorna la base inicial y el desglose con el que se abrió.
+   * Si está abierta, retorna la base inicial, el desglose y el usuario responsable.
    */
   async getCurrentStatus() {
     const activeSession = await this.getActiveSessionEntity();
@@ -76,7 +89,11 @@ export class CajaService {
       // Obtener la última sesión cerrada como referencia
       const lastClosed = await prisma.cashSession.findFirst({
         where: { status: 'CLOSED' },
-        orderBy: { closedAt: 'desc' }
+        orderBy: { closedAt: 'desc' },
+        include: {
+          openedByUser: USER_SELECT_FIELDS,
+          closedByUser: USER_SELECT_FIELDS
+        }
       });
 
       return {
@@ -110,15 +127,17 @@ export class CajaService {
         openedAt: activeSession.openedAt,
         initialAmount: activeSession.initialAmount,
         initialDenominations: parsedInitialDenominations,
-        notes: activeSession.notes
+        notes: activeSession.notes,
+        openedByUserId: activeSession.openedByUserId,
+        openedByUser: activeSession.openedByUser
       }
     };
   }
 
   /**
-   * Abre la caja para el día o turno registrando la base inicial con su desglose de billetes y monedas.
+   * Abre la caja para el día o turno registrando la base inicial con su desglose de billetes y monedas y usuario.
    */
-  async openSession(data: { denominations: DenominationsInput; notes?: string }) {
+  async openSession(data: { denominations: DenominationsInput; notes?: string; userId?: number }) {
     // 1. Validar que no haya una caja abierta actualmente
     const existingOpen = await this.getActiveSessionEntity();
     if (existingOpen) {
@@ -152,7 +171,7 @@ export class CajaService {
       sessionNumber = `CAJA-${currentYear}-${nextSessionSeq.toString().padStart(4, '0')}`;
     }
 
-    // 4. Crear registro de apertura
+    // 4. Crear registro de apertura con usuario auditor
     const newSession = await prisma.cashSession.create({
       data: {
         sessionNumber,
@@ -160,7 +179,12 @@ export class CajaService {
         openedAt: new Date(),
         initialAmount: total,
         initialDenominations: JSON.stringify(normalized),
-        notes: data.notes || null
+        notes: data.notes || null,
+        openedByUserId: data.userId ? Number(data.userId) : null
+      },
+      include: {
+        openedByUser: USER_SELECT_FIELDS,
+        closedByUser: USER_SELECT_FIELDS
       }
     });
 
@@ -171,9 +195,10 @@ export class CajaService {
   }
 
   /**
-   * Cierra la caja activa registrando el conteo final de billetes y monedas del día.
+   * Cierra la caja activa registrando el conteo final de billetes y monedas,
+   * y desactiva (archiva) automáticamente todas las comandas del turno que estén activas.
    */
-  async closeSession(data: { denominations: DenominationsInput; closingNotes?: string }) {
+  async closeSession(data: { denominations: DenominationsInput; closingNotes?: string; userId?: number }) {
     // 1. Obtener la sesión activa
     const activeSession = await this.getActiveSessionEntity();
     if (!activeSession) {
@@ -183,16 +208,30 @@ export class CajaService {
     // 2. Calcular el total contado al cierre a partir del desglose
     const { total: finalAmount, normalized: finalNormalized } = this.calculateDenominationsTotal(data.denominations);
 
-    // 3. Actualizar y cerrar la sesión en base de datos
-    const closedSession = await prisma.cashSession.update({
-      where: { id: activeSession.id },
-      data: {
-        status: 'CLOSED',
-        closedAt: new Date(),
-        finalAmount,
-        finalDenominations: JSON.stringify(finalNormalized),
-        closingNotes: data.closingNotes || null
-      }
+    // 3. Transacción atómica: Actualizar sesión a CLOSED y archivar comandas activas
+    const closedSession = await prisma.$transaction(async (tx) => {
+      // A. Desactivar comandas activas del turno
+      await tx.order.updateMany({
+        where: { active: true },
+        data: { active: false }
+      });
+
+      // B. Actualizar y cerrar la sesión de caja
+      return tx.cashSession.update({
+        where: { id: activeSession.id },
+        data: {
+          status: 'CLOSED',
+          closedAt: new Date(),
+          finalAmount,
+          finalDenominations: JSON.stringify(finalNormalized),
+          closingNotes: data.closingNotes || null,
+          closedByUserId: data.userId ? Number(data.userId) : null
+        },
+        include: {
+          openedByUser: USER_SELECT_FIELDS,
+          closedByUser: USER_SELECT_FIELDS
+        }
+      });
     });
 
     return {
@@ -203,18 +242,77 @@ export class CajaService {
   }
 
   /**
-   * Consulta el historial de todas las sesiones de caja con paginación opcional.
+   * Permite la edición administrativa de una sesión de caja existente.
    */
-  async getSessionHistory(limit = 20, page = 1) {
+  async updateSession(
+    id: number,
+    data: {
+      initialAmount?: number;
+      finalAmount?: number;
+      notes?: string;
+      closingNotes?: string;
+    }
+  ) {
+    const session = await prisma.cashSession.findUnique({ where: { id } });
+    if (!session) {
+      throw new Error('SESSION_NOT_FOUND');
+    }
+
+    const updated = await prisma.cashSession.update({
+      where: { id },
+      data: {
+        initialAmount: data.initialAmount !== undefined ? Number(data.initialAmount) : undefined,
+        finalAmount: data.finalAmount !== undefined ? Number(data.finalAmount) : undefined,
+        notes: data.notes !== undefined ? data.notes : undefined,
+        closingNotes: data.closingNotes !== undefined ? data.closingNotes : undefined
+      },
+      include: {
+        openedByUser: USER_SELECT_FIELDS,
+        closedByUser: USER_SELECT_FIELDS
+      }
+    });
+
+    let initialDenom = {};
+    let finalDenom = null;
+    try {
+      initialDenom = JSON.parse(updated.initialDenominations || '{}');
+    } catch {
+      initialDenom = {};
+    }
+    if (updated.finalDenominations) {
+      try {
+        finalDenom = JSON.parse(updated.finalDenominations);
+      } catch {
+        finalDenom = {};
+      }
+    }
+
+    return {
+      ...updated,
+      initialDenominations: initialDenom,
+      finalDenominations: finalDenom
+    };
+  }
+
+  /**
+   * Consulta el historial de todas las sesiones de caja con paginación opcional y filtro por usuario.
+   */
+  async getSessionHistory(limit = 20, page = 1, openedByUserId?: number) {
     const skip = (Math.max(1, page) - 1) * limit;
+    const whereClause = openedByUserId ? { openedByUserId: Number(openedByUserId) } : {};
 
     const [sessions, total] = await Promise.all([
       prisma.cashSession.findMany({
+        where: whereClause,
         skip,
         take: limit,
-        orderBy: { openedAt: 'desc' }
+        orderBy: { openedAt: 'desc' },
+        include: {
+          openedByUser: USER_SELECT_FIELDS,
+          closedByUser: USER_SELECT_FIELDS
+        }
       }),
-      prisma.cashSession.count()
+      prisma.cashSession.count({ where: whereClause })
     ]);
 
     const formattedSessions = sessions.map((s) => {
@@ -254,7 +352,11 @@ export class CajaService {
    */
   async getSessionById(id: number) {
     const session = await prisma.cashSession.findUnique({
-      where: { id }
+      where: { id },
+      include: {
+        openedByUser: USER_SELECT_FIELDS,
+        closedByUser: USER_SELECT_FIELDS
+      }
     });
 
     if (!session) return null;

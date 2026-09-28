@@ -15,8 +15,16 @@ import saleRoutes from './sale.routes';
 import inventoryRoutes from './inventory.routes';
 import dashboardRoutes from './dashboard.routes';
 import cajaRoutes from './caja.routes';
+import authRoutes from './auth.routes';
+import userRoutes from './user.routes';
 
 const router = Router();
+
+// Montar submódulo de Autenticación en /api/auth
+router.use('/auth', authRoutes);
+
+// Montar submódulo de Usuarios en /api/users
+router.use('/users', userRoutes);
 
 // Montar submódulo de Categorías en /api/categories
 router.use('/categories', categoryRoutes);

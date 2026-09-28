@@ -1,6 +1,7 @@
 import fs from 'fs';
 import path from 'path';
 import Database from 'better-sqlite3';
+import { hashPassword } from '../utils/auth.utils';
 
 const INITIAL_SCHEMA_SQL = `
 CREATE TABLE IF NOT EXISTS "categories" (
@@ -57,14 +58,49 @@ CREATE TABLE IF NOT EXISTS "recipe_details" (
     CONSTRAINT "recipe_details_ingredient_id_fkey" FOREIGN KEY ("ingredient_id") REFERENCES "ingredients" ("id") ON DELETE RESTRICT ON UPDATE CASCADE
 );
 
+CREATE TABLE IF NOT EXISTS "users" (
+    "id" INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+    "full_name" TEXT NOT NULL,
+    "username" TEXT NOT NULL,
+    "password_hash" TEXT NOT NULL,
+    "role" TEXT NOT NULL DEFAULT 'WORKER',
+    "active" BOOLEAN NOT NULL DEFAULT 1,
+    "joined_at" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "created_at" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updated_at" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS "cash_sessions" (
+    "id" INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+    "session_number" TEXT NOT NULL,
+    "status" TEXT NOT NULL DEFAULT 'OPEN',
+    "opened_at" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "closed_at" DATETIME,
+    "initial_amount" REAL NOT NULL DEFAULT 0.0,
+    "initial_denominations" TEXT NOT NULL,
+    "final_amount" REAL,
+    "final_denominations" TEXT,
+    "notes" TEXT,
+    "closing_notes" TEXT,
+    "opened_by_user_id" INTEGER,
+    "closed_by_user_id" INTEGER,
+    "created_at" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updated_at" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT "cash_sessions_opened_by_user_id_fkey" FOREIGN KEY ("opened_by_user_id") REFERENCES "users" ("id") ON DELETE SET NULL ON UPDATE CASCADE,
+    CONSTRAINT "cash_sessions_closed_by_user_id_fkey" FOREIGN KEY ("closed_by_user_id") REFERENCES "users" ("id") ON DELETE SET NULL ON UPDATE CASCADE
+);
+
 CREATE TABLE IF NOT EXISTS "orders" (
     "id" INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
     "number" TEXT NOT NULL,
     "notes" TEXT,
     "date" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "total" REAL NOT NULL DEFAULT 0.0,
+    "active" BOOLEAN NOT NULL DEFAULT 1,
+    "cash_session_id" INTEGER,
     "created_at" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    "updated_at" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+    "updated_at" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT "orders_cash_session_id_fkey" FOREIGN KEY ("cash_session_id") REFERENCES "cash_sessions" ("id") ON DELETE SET NULL ON UPDATE CASCADE
 );
 
 CREATE TABLE IF NOT EXISTS "order_details" (
@@ -117,22 +153,6 @@ CREATE TABLE IF NOT EXISTS "inventory_movements" (
     CONSTRAINT "inventory_movements_ingredient_id_fkey" FOREIGN KEY ("ingredient_id") REFERENCES "ingredients" ("id") ON DELETE RESTRICT ON UPDATE CASCADE
 );
 
-CREATE TABLE IF NOT EXISTS "cash_sessions" (
-    "id" INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
-    "session_number" TEXT NOT NULL,
-    "status" TEXT NOT NULL DEFAULT 'OPEN',
-    "opened_at" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    "closed_at" DATETIME,
-    "initial_amount" REAL NOT NULL DEFAULT 0.0,
-    "initial_denominations" TEXT NOT NULL,
-    "final_amount" REAL,
-    "final_denominations" TEXT,
-    "notes" TEXT,
-    "closing_notes" TEXT,
-    "created_at" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    "updated_at" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
-);
-
 CREATE UNIQUE INDEX IF NOT EXISTS "categories_name_key" ON "categories"("name");
 CREATE INDEX IF NOT EXISTS "products_category_id_idx" ON "products"("category_id");
 CREATE INDEX IF NOT EXISTS "products_available_idx" ON "products"("available");
@@ -141,7 +161,13 @@ CREATE UNIQUE INDEX IF NOT EXISTS "recipes_product_id_key" ON "recipes"("product
 CREATE INDEX IF NOT EXISTS "recipe_details_recipe_id_idx" ON "recipe_details"("recipe_id");
 CREATE INDEX IF NOT EXISTS "recipe_details_ingredient_id_idx" ON "recipe_details"("ingredient_id");
 CREATE UNIQUE INDEX IF NOT EXISTS "recipe_details_recipe_id_ingredient_id_key" ON "recipe_details"("recipe_id", "ingredient_id");
+CREATE UNIQUE INDEX IF NOT EXISTS "users_username_key" ON "users"("username");
+CREATE INDEX IF NOT EXISTS "cash_sessions_opened_by_user_id_idx" ON "cash_sessions"("opened_by_user_id");
+CREATE INDEX IF NOT EXISTS "cash_sessions_closed_by_user_id_idx" ON "cash_sessions"("closed_by_user_id");
+CREATE UNIQUE INDEX IF NOT EXISTS "cash_sessions_session_number_key" ON "cash_sessions"("session_number");
 CREATE UNIQUE INDEX IF NOT EXISTS "orders_number_key" ON "orders"("number");
+CREATE INDEX IF NOT EXISTS "orders_active_idx" ON "orders"("active");
+CREATE INDEX IF NOT EXISTS "orders_cash_session_id_idx" ON "orders"("cash_session_id");
 CREATE INDEX IF NOT EXISTS "order_details_order_id_idx" ON "order_details"("order_id");
 CREATE INDEX IF NOT EXISTS "order_details_product_id_idx" ON "order_details"("product_id");
 CREATE UNIQUE INDEX IF NOT EXISTS "sales_invoice_number_key" ON "sales"("invoice_number");
@@ -150,7 +176,6 @@ CREATE INDEX IF NOT EXISTS "sale_details_sale_id_idx" ON "sale_details"("sale_id
 CREATE INDEX IF NOT EXISTS "sale_details_product_id_idx" ON "sale_details"("product_id");
 CREATE INDEX IF NOT EXISTS "inventory_movements_ingredient_id_idx" ON "inventory_movements"("ingredient_id");
 CREATE INDEX IF NOT EXISTS "inventory_movements_date_idx" ON "inventory_movements"("date");
-CREATE UNIQUE INDEX IF NOT EXISTS "cash_sessions_session_number_key" ON "cash_sessions"("session_number");
 `;
 
 export async function initializeDatabase(): Promise<void> {
@@ -173,7 +198,7 @@ export async function initializeDatabase(): Promise<void> {
   db.pragma('foreign_keys = ON');
 
   try {
-    // 1. Tabla de migraciones
+    // 1. Tabla de control de migraciones
     db.exec(`
       CREATE TABLE IF NOT EXISTS "_migrations" (
         "id" TEXT PRIMARY KEY,
@@ -181,15 +206,12 @@ export async function initializeDatabase(): Promise<void> {
       );
     `);
 
-    // 2. Verificar si ya se aplicó el esquema
-    const checkStmt = db.prepare('SELECT id FROM "_migrations" WHERE id = ?');
-    const applied = checkStmt.get('001_initial_schema');
-
-    if (!applied) {
+    // 2. Migración inicial 001_initial_schema
+    const check001 = db.prepare('SELECT id FROM "_migrations" WHERE id = ?').get('001_initial_schema');
+    if (!check001) {
       console.log('[DB Init] Aplicando esquema DDL inicial...');
       let ddl = INITIAL_SCHEMA_SQL;
 
-      // Si existe el archivo de migración en disco, preferirlo
       const migrationFile = path.resolve(__dirname, '../../prisma/migrations/001_initial_schema.sql');
       if (fs.existsSync(migrationFile)) {
         try {
@@ -204,18 +226,82 @@ export async function initializeDatabase(): Promise<void> {
       applyTx();
       console.log('[DB Init] ✅ Esquema inicial aplicado.');
 
-      // 3. Sembrar datos de muestra si está vacía
+      // Sembrar datos de muestra si categorías está vacía
       const catCount = (db.prepare('SELECT count(*) as c FROM categories').get() as { c: number }).c;
       if (catCount === 0) {
         console.log('[DB Init] Sembrando catálogo base...');
         seedInitialData(db);
         console.log('[DB Init] ✅ Catálogo base sembrado.');
       }
-    } else {
-      console.log('[DB Init] Base de datos verificada (esquema ya aplicado).');
     }
 
-    // 4. Backup diario
+    // 3. Migración incremental 002_users_auth_and_session_orders
+    const check002 = db.prepare('SELECT id FROM "_migrations" WHERE id = ?').get('002_users_auth_and_session_orders');
+    if (!check002) {
+      console.log('[DB Init] Aplicando migración 002_users_auth_and_session_orders...');
+      const mig002Tx = db.transaction(() => {
+        // A. Crear tabla users si no existe
+        db.exec(`
+          CREATE TABLE IF NOT EXISTS "users" (
+              "id" INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+              "full_name" TEXT NOT NULL,
+              "username" TEXT NOT NULL,
+              "password_hash" TEXT NOT NULL,
+              "role" TEXT NOT NULL DEFAULT 'WORKER',
+              "active" BOOLEAN NOT NULL DEFAULT 1,
+              "joined_at" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+              "created_at" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+              "updated_at" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+          );
+          CREATE UNIQUE INDEX IF NOT EXISTS "users_username_key" ON "users"("username");
+        `);
+
+        // B. Verificar y agregar columnas en cash_sessions
+        const cashCols = (db.pragma('table_info("cash_sessions")') as Array<{ name: string }>).map((c) => c.name);
+        if (!cashCols.includes('opened_by_user_id')) {
+          db.exec('ALTER TABLE "cash_sessions" ADD COLUMN "opened_by_user_id" INTEGER;');
+        }
+        if (!cashCols.includes('closed_by_user_id')) {
+          db.exec('ALTER TABLE "cash_sessions" ADD COLUMN "closed_by_user_id" INTEGER;');
+        }
+
+        // C. Verificar y agregar columnas en orders
+        const orderCols = (db.pragma('table_info("orders")') as Array<{ name: string }>).map((c) => c.name);
+        if (!orderCols.includes('active')) {
+          db.exec('ALTER TABLE "orders" ADD COLUMN "active" BOOLEAN NOT NULL DEFAULT 1;');
+        }
+        if (!orderCols.includes('cash_session_id')) {
+          db.exec('ALTER TABLE "orders" ADD COLUMN "cash_session_id" INTEGER;');
+        }
+
+        // Crear índices adicionales si no existen
+        db.exec(`
+          CREATE INDEX IF NOT EXISTS "orders_active_idx" ON "orders"("active");
+          CREATE INDEX IF NOT EXISTS "orders_cash_session_id_idx" ON "orders"("cash_session_id");
+          CREATE INDEX IF NOT EXISTS "cash_sessions_opened_by_user_id_idx" ON "cash_sessions"("opened_by_user_id");
+          CREATE INDEX IF NOT EXISTS "cash_sessions_closed_by_user_id_idx" ON "cash_sessions"("closed_by_user_id");
+        `);
+
+        // D. Registrar migración
+        db.prepare('INSERT INTO "_migrations" (id) VALUES (?)').run('002_users_auth_and_session_orders');
+      });
+      mig002Tx();
+      console.log('[DB Init] ✅ Migración 002 aplicada con éxito.');
+    }
+
+    // 4. Sembrar Administrador por defecto obligatorio si no existe
+    const adminUser = db.prepare('SELECT id FROM users WHERE lower(username) = lower(?)').get('Admin');
+    if (!adminUser) {
+      console.log('[DB Init] Sembrando usuario administrador por defecto...');
+      const adminHash = hashPassword('123456');
+      db.prepare(`
+        INSERT INTO users (full_name, username, password_hash, role, active, joined_at, created_at, updated_at)
+        VALUES (?, ?, ?, 'ADMIN', 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+      `).run('Administrador', 'Admin', adminHash);
+      console.log('[DB Init] ✅ Usuario Admin/123456 sembrado.');
+    }
+
+    // 5. Backup diario
     await runDailyBackup(db, backupDir);
 
   } finally {

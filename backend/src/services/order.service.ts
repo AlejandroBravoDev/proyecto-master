@@ -3,8 +3,10 @@
  * SERVICIO DE COMANDAS Y PEDIDOS (MODEL/SERVICE LAYER)
  * ====================================================
  * Procesa la creación de pedidos y efectúa de forma automática:
- * 1. Descuento de stock de insumos en bodega según receta.
- * 2. Registro inmediato de la Venta (Sale) cobrada.
+ * 1. Validación de sesión de caja activa (caja abierta).
+ * 2. Descuento de stock de insumos en bodega según receta.
+ * 3. Registro inmediato de la Venta (Sale) cobrada.
+ * 4. Filtrado por turno actual (active) o histórico por fecha/sesión.
  */
 
 import prisma from '../prisma/client';
@@ -12,22 +14,53 @@ import { PaymentMethod } from '@prisma/client';
 
 export class OrderService {
   /**
-   * Obtiene la lista completa de comandas ordenadas por fecha reciente.
+   * Obtiene la lista de comandas según los filtros especificados.
+   * Por defecto (sin filtros o scope=active) retorna solo las comandas activas del turno actual.
+   * @param filters Opciones de filtrado: scope ('active' | 'all'), date ('YYYY-MM-DD'), cashSessionId
    */
-  async getAllOrders() {
+  async getAllOrders(filters?: { scope?: string; date?: string; cashSessionId?: number }) {
+    const whereClause: any = {};
+
+    if (filters?.scope === 'all') {
+      // Retorna todas las comandas históricas
+    } else if (filters?.date) {
+      // Filtrar por fecha específica (inicio a fin del día)
+      const dateStr = filters.date.trim();
+      const startOfDay = new Date(`${dateStr}T00:00:00.000`);
+      const endOfDay = new Date(`${dateStr}T23:59:59.999`);
+      whereClause.date = {
+        gte: startOfDay,
+        lte: endOfDay
+      };
+    } else if (filters?.cashSessionId) {
+      // Filtrar por sesión de caja específica
+      whereClause.cashSessionId = Number(filters.cashSessionId);
+    } else {
+      // Por defecto: solo comandas activas del turno actual
+      whereClause.active = true;
+    }
+
     return prisma.order.findMany({
+      where: whereClause,
       include: {
         orderDetails: {
           include: { product: true }
         },
-        sale: true
+        sale: true,
+        cashSession: {
+          select: {
+            id: true,
+            sessionNumber: true,
+            openedAt: true
+          }
+        }
       },
       orderBy: { createdAt: 'desc' }
     });
   }
 
   /**
-   * Obtiene una comanda por su ID con sus detalles y estado de facturación.
+   * Obtiene una comanda por su ID con sus detalles, factura y sesión de caja.
    * @param id ID de la comanda
    */
   async getOrderById(id: number) {
@@ -37,13 +70,20 @@ export class OrderService {
         orderDetails: {
           include: { product: true }
         },
-        sale: true
+        sale: true,
+        cashSession: {
+          select: {
+            id: true,
+            sessionNumber: true,
+            openedAt: true
+          }
+        }
       }
     });
   }
 
   /**
-   * Registra una nueva comanda, descuenta insumos y genera la VENTA (Sale) automáticamente.
+   * Registra una nueva comanda, valida caja abierta, descuenta insumos y genera la VENTA (Sale) automáticamente.
    * @param data Lista de productos solicitados, forma de pago opcional, impuestos/descuentos y notas
    */
   async createOrder(data: {
@@ -53,7 +93,16 @@ export class OrderService {
     tax?: number;
     discount?: number;
   }) {
-    // 1. Obtener la información de los productos solicitados junto a sus recetas e insumos
+    // 1. Validación obligatoria de Caja Abierta
+    const activeCashSession = await prisma.cashSession.findFirst({
+      where: { status: 'OPEN' }
+    });
+
+    if (!activeCashSession) {
+      throw new Error('CAJA_CERRADA');
+    }
+
+    // 2. Obtener la información de los productos solicitados junto a sus recetas e insumos
     const productIds = data.items.map((item) => Number(item.productId));
     const products = await prisma.product.findMany({
       where: { id: { in: productIds } },
@@ -74,7 +123,7 @@ export class OrderService {
     const orderDetailsData: any[] = [];
     const saleDetailsData: any[] = [];
 
-    // 2. Validar cada ítem del pedido, calcular subtotales y estructurar líneas de venta
+    // 3. Validar cada ítem del pedido, calcular subtotales y estructurar líneas de venta
     for (const item of data.items) {
       const prodId = Number(item.productId);
       const qty = Number(item.quantity);
@@ -112,7 +161,7 @@ export class OrderService {
     const calculatedDiscount = Number(data.discount || 0);
     const totalFinal = subtotal + calculatedTax - calculatedDiscount;
 
-    // 3. Transacción ACID: Generar correlativos únicos, crear comanda, factura (Sale) y descontar insumos
+    // 4. Transacción ACID: Generar correlativos únicos, crear comanda, factura (Sale) y descontar insumos
     return prisma.$transaction(async (tx) => {
       // A. Generación segura y libre de colisiones de orderNumber (ORD-XXXX)
       const lastOrder = await tx.order.findFirst({
@@ -161,12 +210,14 @@ export class OrderService {
         invoiceNumber = `INV-${currentYear}-${nextSaleSeq.toString().padStart(4, '0')}`;
       }
 
-      // C. Crear registro de comanda
+      // C. Crear registro de comanda vinculada a la sesión de caja activa
       const newOrder = await tx.order.create({
         data: {
           number: orderNumber,
           notes: data.notes,
           total: subtotal,
+          active: true,
+          cashSessionId: activeCashSession.id,
           orderDetails: {
             create: orderDetailsData
           }
@@ -174,6 +225,13 @@ export class OrderService {
         include: {
           orderDetails: {
             include: { product: true }
+          },
+          cashSession: {
+            select: {
+              id: true,
+              sessionNumber: true,
+              openedAt: true
+            }
           }
         }
       });
@@ -194,7 +252,7 @@ export class OrderService {
         }
       });
 
-      // C. Descontar inventario por cada ingrediente según la receta del producto
+      // E. Descontar inventario por cada ingrediente según la receta del producto
       for (const item of data.items) {
         const prodId = Number(item.productId);
         const qty = Number(item.quantity);

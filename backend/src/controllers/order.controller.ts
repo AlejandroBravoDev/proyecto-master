@@ -11,11 +11,15 @@ import { orderService } from '../services/order.service';
 export class OrderController {
   /**
    * GET /api/orders
-   * Retorna el listado de comandas.
+   * Retorna el listado de comandas con filtrado opcional por scope (active/all), date o cashSessionId.
    */
-  async getOrders(_req: Request, res: Response) {
+  async getOrders(req: Request, res: Response) {
     try {
-      const orders = await orderService.getAllOrders();
+      const scope = req.query.scope ? String(req.query.scope) : undefined;
+      const date = req.query.date ? String(req.query.date) : undefined;
+      const cashSessionId = req.query.cashSessionId ? Number(req.query.cashSessionId) : undefined;
+
+      const orders = await orderService.getAllOrders({ scope, date, cashSessionId });
       return res.json(orders);
     } catch (error) {
       return res.status(500).json({ error: 'Error al obtener comandas', details: error });
@@ -43,7 +47,7 @@ export class OrderController {
 
   /**
    * POST /api/orders
-   * Crea una comanda, registra automáticamente la Venta (Sale) y descuenta insumos.
+   * Crea una comanda, valida caja abierta, registra la Venta (Sale) y descuenta insumos.
    */
   async createOrder(req: Request, res: Response) {
     try {
@@ -56,6 +60,9 @@ export class OrderController {
       const result = await orderService.createOrder({ items, notes, paymentMethod, tax, discount });
       return res.status(201).json(result);
     } catch (error: any) {
+      if (error.message === 'CAJA_CERRADA') {
+        return res.status(400).json({ error: 'No se puede crear la comanda porque la caja está cerrada. Abra un turno de caja primero.' });
+      }
       if (error.message?.startsWith('PRODUCT_NOT_FOUND:')) {
         return res.status(400).json({ error: `Producto ID ${error.message.split(':')[1]} no encontrado` });
       }

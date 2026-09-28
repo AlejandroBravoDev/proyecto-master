@@ -13,6 +13,28 @@ generator client {
 }
 
 // ----------------------------------------------------
+// 0. Usuarios y Trabajadores (User)
+// Control de acceso, roles y auditoría de sesiones
+// ----------------------------------------------------
+model User {
+  id             Int           @id @default(autoincrement())
+  fullName       String        @map("full_name")
+  username       String        @unique
+  passwordHash   String        @map("password_hash")
+  role           String        @default("WORKER") // "ADMIN" | "WORKER"
+  active         Boolean       @default(true)
+  joinedAt       DateTime      @default(now()) @map("joined_at")
+  createdAt      DateTime      @default(now()) @map("created_at")
+  updatedAt      DateTime      @updatedAt @map("updated_at")
+
+  // Relaciones
+  openedSessions CashSession[] @relation("OpenedBy")
+  closedSessions CashSession[] @relation("ClosedBy")
+
+  @@map("users")
+}
+
+// ----------------------------------------------------
 // 1. Categorías del Menú (Category)
 // Clasifica los productos ofrecidos en el establecimiento
 // ----------------------------------------------------
@@ -128,18 +150,23 @@ model RecipeDetail {
 // Registro del pedido tomado en mesa o barra
 // ----------------------------------------------------
 model Order {
-  id           Int           @id @default(autoincrement()) // ID interno del pedido
-  number       String        @unique                       // Código legible (ej: ORD-0001)
-  notes        String?                                     // Notas del cliente o mesero (ej: Mesa 4)
-  date         DateTime      @default(now())               // Fecha y hora del pedido
-  total        Float         @default(0.0)                 // Monto total acumulado
-  createdAt    DateTime      @default(now()) @map("created_at")
-  updatedAt    DateTime      @updatedAt @map("updated_at")
+  id            Int           @id @default(autoincrement()) // ID interno del pedido
+  number        String        @unique                       // Código legible (ej: ORD-0001)
+  notes         String?                                     // Notas del cliente o mesero (ej: Mesa 4)
+  date          DateTime      @default(now())               // Fecha y hora del pedido
+  total         Float         @default(0.0)                 // Monto total acumulado
+  active        Boolean       @default(true)                // Indica si la comanda pertenece al turno actual
+  cashSessionId Int?          @map("cash_session_id")       // Enlace a la sesión de caja del turno
+  createdAt     DateTime      @default(now()) @map("created_at")
+  updatedAt     DateTime      @updatedAt @map("updated_at")
 
   // Relaciones
-  orderDetails OrderDetail[] // Renglones o ítems del pedido
-  sale         Sale?         // Relación 1-a-1 opcional con la venta/factura final
+  orderDetails  OrderDetail[] // Renglones o ítems del pedido
+  sale          Sale?         // Relación 1-a-1 opcional con la venta/factura final
+  cashSession   CashSession?  @relation(fields: [cashSessionId], references: [id])
 
+  @@index([active])
+  @@index([cashSessionId])
   @@map("orders")
 }
 
@@ -279,9 +306,21 @@ model CashSession {
   notes                String?                                         // Notas de apertura
   closingNotes         String?           @map("closing_notes")         // Observaciones del cierre
 
+  // Auditoría por Usuario
+  openedByUserId       Int?              @map("opened_by_user_id")
+  closedByUserId       Int?              @map("closed_by_user_id")
+
   createdAt            DateTime          @default(now()) @map("created_at")
   updatedAt            DateTime          @updatedAt @map("updated_at")
 
+  // Relaciones
+  openedByUser         User?             @relation("OpenedBy", fields: [openedByUserId], references: [id])
+  closedByUser         User?             @relation("ClosedBy", fields: [closedByUserId], references: [id])
+  orders               Order[]
+
+  @@index([openedByUserId])
+  @@index([closedByUserId])
   @@map("cash_sessions")
 }
+
 

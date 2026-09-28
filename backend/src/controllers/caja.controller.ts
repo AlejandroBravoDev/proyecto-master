@@ -3,7 +3,7 @@
  * CONTROLADOR DE CAJA Y ARQUEOS (CONTROLLER LAYER)
  * ====================================================
  * Procesa las peticiones HTTP para apertura de turno con base,
- * consulta de estado en tiempo real, arqueo y cierre de caja.
+ * consulta de estado en tiempo real, arqueo, cierre de caja y edición administrativa.
  */
 
 import { Request, Response } from 'express';
@@ -12,7 +12,7 @@ import { cajaService } from '../services/caja.service';
 export class CajaController {
   /**
    * GET /api/caja/status
-   * Consulta el estado en tiempo real de la caja (abierta/cerrada, base, ventas y esperado).
+   * Consulta el estado en tiempo real de la caja (abierta/cerrada, base y usuario auditor).
    */
   async getStatus(_req: Request, res: Response) {
     try {
@@ -25,11 +25,11 @@ export class CajaController {
 
   /**
    * POST /api/caja/open
-   * Abre la sesión de caja registrando la base inicial con su desglose de billetes y monedas.
+   * Abre la sesión de caja registrando la base inicial con su desglose de billetes y monedas y usuario.
    */
   async openSession(req: Request, res: Response) {
     try {
-      const { denominations, notes } = req.body;
+      const { denominations, notes, userId } = req.body;
 
       if (!denominations || typeof denominations !== 'object') {
         return res.status(400).json({
@@ -37,7 +37,7 @@ export class CajaController {
         });
       }
 
-      const session = await cajaService.openSession({ denominations, notes });
+      const session = await cajaService.openSession({ denominations, notes, userId });
       return res.status(201).json(session);
     } catch (error: any) {
       if (error.message === 'SESSION_ALREADY_OPEN') {
@@ -51,11 +51,11 @@ export class CajaController {
 
   /**
    * POST /api/caja/close
-   * Cierra y arquea la caja activa calculando el dinero físico, esperado y diferencias.
+   * Cierra la caja activa registrando el conteo final y archivando comandas activas.
    */
   async closeSession(req: Request, res: Response) {
     try {
-      const { denominations, closingNotes } = req.body;
+      const { denominations, closingNotes, userId } = req.body;
 
       if (!denominations || typeof denominations !== 'object') {
         return res.status(400).json({
@@ -63,7 +63,7 @@ export class CajaController {
         });
       }
 
-      const closedSession = await cajaService.closeSession({ denominations, closingNotes });
+      const closedSession = await cajaService.closeSession({ denominations, closingNotes, userId });
       return res.status(200).json(closedSession);
     } catch (error: any) {
       if (error.message === 'NO_ACTIVE_SESSION') {
@@ -76,15 +76,35 @@ export class CajaController {
   }
 
   /**
+   * PUT /api/caja/:id
+   * Permite la edición administrativa de montos y observaciones de una sesión de caja.
+   */
+  async updateSession(req: Request, res: Response) {
+    try {
+      const id = Number(req.params.id);
+      const { initialAmount, finalAmount, notes, closingNotes } = req.body;
+
+      const updated = await cajaService.updateSession(id, { initialAmount, finalAmount, notes, closingNotes });
+      return res.status(200).json(updated);
+    } catch (error: any) {
+      if (error.message === 'SESSION_NOT_FOUND') {
+        return res.status(404).json({ error: 'Sesión de caja no encontrada.' });
+      }
+      return res.status(500).json({ error: 'Error al actualizar sesión de caja', details: error.message || error });
+    }
+  }
+
+  /**
    * GET /api/caja/history
-   * Obtiene el listado histórico de sesiones de caja y arqueos.
+   * Obtiene el listado histórico de sesiones de caja con paginación y filtro opcional por usuario.
    */
   async getHistory(req: Request, res: Response) {
     try {
       const limit = req.query.limit ? parseInt(String(req.query.limit), 10) : 20;
       const page = req.query.page ? parseInt(String(req.query.page), 10) : 1;
+      const openedByUserId = req.query.openedByUserId ? parseInt(String(req.query.openedByUserId), 10) : undefined;
 
-      const history = await cajaService.getSessionHistory(limit, page);
+      const history = await cajaService.getSessionHistory(limit, page, openedByUserId);
       return res.status(200).json(history);
     } catch (error: any) {
       return res.status(500).json({ error: 'Error al obtener historial de cajas', details: error.message || error });
