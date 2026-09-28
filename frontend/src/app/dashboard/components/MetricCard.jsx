@@ -1,8 +1,15 @@
-import React from 'react';
-import { DollarSign, Banknote, AlertTriangle } from 'lucide-react';
+import React, { useState } from 'react';
+import { DollarSign, Banknote, AlertTriangle, Eye, EyeOff } from 'lucide-react';
 import { formatCurrency, formatNumber } from '../utils/formatters';
 
 export default function MetricCard({ metric }) {
+  const isFinancial =
+    metric.type === 'currency' ||
+    metric.id === 'total-revenue' ||
+    metric.id === 'gross-profit';
+
+  const [isVisible, setIsVisible] = useState(!isFinancial);
+
   const isStockAlert = metric.category === 'stockAlertsCount';
   const isUnits = metric.type === 'number' && !isStockAlert;
 
@@ -12,18 +19,43 @@ export default function MetricCard({ metric }) {
     ? `${formatNumber(metric.rawValue)} und`
     : formatNumber(metric.rawValue);
 
+  const displayValue = isFinancial && !isVisible ? '$****' : formattedValue;
+
   return (
     <div className="bg-white rounded-3xl border border-slate-200/80 shadow-sm relative overflow-hidden flex flex-col justify-between transition-all duration-300 hover:shadow-md hover:-translate-y-0.5">
       {/* Top Red Accent Header Bar */}
       <div className="h-3 bg-brand-red w-full rounded-t-3xl" />
 
       <div className="p-6 relative">
-        {/* Title */}
-        <span className="text-sm font-bold text-slate-500 block mb-2">{metric.title}</span>
+        {/* Title & Show/Hide Toggle for Financial Cards */}
+        <div className="flex items-center justify-between gap-2 mb-2">
+          <span className="text-sm font-bold text-slate-500 block">{metric.title}</span>
+
+          {isFinancial && (
+            <button
+              type="button"
+              onClick={() => setIsVisible((prev) => !prev)}
+              className="inline-flex items-center space-x-1.5 px-2.5 py-1 rounded-xl bg-slate-100 hover:bg-slate-200/80 text-slate-600 hover:text-[#584235] text-xs font-bold transition-all cursor-pointer shrink-0"
+              title={isVisible ? 'Ocultar monto' : 'Mostrar monto'}
+            >
+              {isVisible ? (
+                <>
+                  <EyeOff className="w-3.5 h-3.5 text-slate-500" />
+                  <span>Ocultar</span>
+                </>
+              ) : (
+                <>
+                  <Eye className="w-3.5 h-3.5 text-[#E63946]" />
+                  <span>Mostrar</span>
+                </>
+              )}
+            </button>
+          )}
+        </div>
 
         {/* Large Value */}
         <div className="text-3xl font-black text-brand-text tracking-tight mb-3">
-          {formattedValue}
+          {displayValue}
         </div>
 
         {/* Bottom Details & Watermark Icon */}

@@ -1,14 +1,39 @@
-import React from 'react';
-import { SlidersHorizontal, History, Edit3, Trash2, Box, AlertCircle } from 'lucide-react';
+import React, { useState, useEffect, useMemo } from 'react';
+import { SlidersHorizontal, History, Edit3, Trash2, Box } from 'lucide-react';
 import { formatCurrency, formatQuantity, getStockStatus } from '../utils/inventoryUtils';
+import Pagination, { ITEMS_PER_PAGE } from '../../common/Pagination';
 
 export default function IngredientTable({
   ingredients = [],
+  currentPage: controlledPage,
+  onPageChange: controlledOnPageChange,
+  itemsPerPage = ITEMS_PER_PAGE,
   onAdjustStock,
   onViewKardex,
   onEdit,
   onDelete,
+  isAdmin = true,
 }) {
+  const [internalPage, setInternalPage] = useState(1);
+
+  const isControlled = controlledPage !== undefined && typeof controlledOnPageChange === 'function';
+  const activePage = isControlled ? controlledPage : internalPage;
+  const handlePageChange = isControlled ? controlledOnPageChange : setInternalPage;
+
+  useEffect(() => {
+    if (!isControlled) {
+      setInternalPage(1);
+    }
+  }, [ingredients.length, isControlled]);
+
+  const totalPages = Math.max(1, Math.ceil(ingredients.length / itemsPerPage));
+  const safePage = Math.min(Math.max(1, activePage), totalPages);
+
+  const paginatedIngredients = useMemo(() => {
+    const startIndex = (safePage - 1) * itemsPerPage;
+    return ingredients.slice(startIndex, startIndex + itemsPerPage);
+  }, [ingredients, safePage, itemsPerPage]);
+
   if (!ingredients || ingredients.length === 0) {
     return (
       <div className="bg-white rounded-3xl border border-slate-200/80 shadow-sm p-12 text-center flex flex-col items-center justify-center space-y-3">
@@ -24,11 +49,11 @@ export default function IngredientTable({
   }
 
   return (
-    <div className="bg-white rounded-3xl border border-slate-200/80 shadow-sm overflow-hidden">
-      <div className="overflow-x-auto">
+    <div className="bg-white rounded-3xl border border-slate-200/80 shadow-sm overflow-hidden flex flex-col">
+      <div className="overflow-x-auto overflow-y-auto max-h-[600px]">
         <table className="w-full text-left border-collapse">
-          <thead>
-            <tr className="border-b border-slate-100 bg-slate-50/50 text-[11px] font-bold text-slate-400 uppercase tracking-wider">
+          <thead className="sticky top-0 z-10 bg-slate-50">
+            <tr className="border-b border-slate-100 bg-slate-50/95 text-[11px] font-bold text-slate-400 uppercase tracking-wider">
               <th className="py-4 px-6">Insumo</th>
               <th className="py-4 px-4">Unidad</th>
               <th className="py-4 px-4 text-right">Stock Actual</th>
@@ -39,7 +64,7 @@ export default function IngredientTable({
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100 text-sm font-medium text-[#584235]">
-            {ingredients.map((item) => {
+            {paginatedIngredients.map((item) => {
               const statusInfo = getStockStatus(item.currentStock, item.minimumStock);
 
               return (
@@ -91,7 +116,7 @@ export default function IngredientTable({
                   {/* Actions */}
                   <td className="py-4 px-6 text-right">
                     <div className="flex items-center justify-end space-x-1">
-                      {/* Adjust Stock */}
+                      {/* Adjust Stock (Allowed for workers & admins) */}
                       <button
                         onClick={() => onAdjustStock(item)}
                         title="Ajustar Stock (Kardex)"
@@ -100,7 +125,7 @@ export default function IngredientTable({
                         <SlidersHorizontal className="w-4 h-4" />
                       </button>
 
-                      {/* View Kardex */}
+                      {/* View Kardex (Allowed for workers & admins) */}
                       <button
                         onClick={() => onViewKardex(item)}
                         title="Ver Movimientos de Kardex"
@@ -109,23 +134,26 @@ export default function IngredientTable({
                         <History className="w-4 h-4" />
                       </button>
 
-                      {/* Edit */}
-                      <button
-                        onClick={() => onEdit(item)}
-                        title="Editar Insumo"
-                        className="p-2 rounded-xl text-slate-400 hover:text-blue-600 hover:bg-blue-50 transition-colors cursor-pointer"
-                      >
-                        <Edit3 className="w-4 h-4" />
-                      </button>
+                      {/* Edit & Delete (Admin Only) */}
+                      {isAdmin && (
+                        <>
+                          <button
+                            onClick={() => onEdit(item)}
+                            title="Editar Insumo"
+                            className="p-2 rounded-xl text-slate-400 hover:text-blue-600 hover:bg-blue-50 transition-colors cursor-pointer"
+                          >
+                            <Edit3 className="w-4 h-4" />
+                          </button>
 
-                      {/* Delete */}
-                      <button
-                        onClick={() => onDelete(item)}
-                        title="Eliminar Insumo"
-                        className="p-2 rounded-xl text-slate-400 hover:text-[#E63946] hover:bg-red-50 transition-colors cursor-pointer"
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </button>
+                          <button
+                            onClick={() => onDelete(item)}
+                            title="Eliminar Insumo"
+                            className="p-2 rounded-xl text-slate-400 hover:text-[#E63946] hover:bg-red-50 transition-colors cursor-pointer"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        </>
+                      )}
                     </div>
                   </td>
                 </tr>
@@ -134,6 +162,13 @@ export default function IngredientTable({
           </tbody>
         </table>
       </div>
+
+      <Pagination
+        currentPage={safePage}
+        totalItems={ingredients.length}
+        itemsPerPage={itemsPerPage}
+        onPageChange={handlePageChange}
+      />
     </div>
   );
 }

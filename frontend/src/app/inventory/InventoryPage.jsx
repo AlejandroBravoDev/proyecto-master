@@ -16,8 +16,12 @@ import {
   exportIngredientsReport,
 } from './services/inventoryService';
 import { confirmDialog, showErrorAlert } from '../common/alertUtils';
+import { useAuth } from '../auth/AuthContext';
+
+const ITEMS_PER_PAGE = 15;
 
 export default function InventoryPage() {
+  const { isAdmin } = useAuth();
   const [ingredients, setIngredients] = useState([]);
   const [alerts, setAlerts] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -27,9 +31,24 @@ export default function InventoryPage() {
   const [downloadingTemplate, setDownloadingTemplate] = useState(false);
   const [exportingExcel, setExportingExcel] = useState(false);
 
-  // Filters & Search
+  // Filters, Search & Pagination
   const [searchTerm, setSearchTerm] = useState('');
   const [activeFilter, setActiveFilter] = useState('all');
+  const [currentPage, setCurrentPage] = useState(1);
+
+  const handleSearchChange = (value) => {
+    setSearchTerm(value);
+    setCurrentPage(1);
+  };
+
+  const handleFilterChange = (filterId) => {
+    setActiveFilter(filterId);
+    setCurrentPage(1);
+  };
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchTerm, activeFilter]);
 
   // Modals state
   const [ingredientModalOpen, setIngredientModalOpen] = useState(false);
@@ -206,7 +225,7 @@ export default function InventoryPage() {
             return (
               <button
                 key={filter.id}
-                onClick={() => setActiveFilter(filter.id)}
+                onClick={() => handleFilterChange(filter.id)}
                 className={`flex items-center space-x-2 px-5 py-2.5 rounded-xl text-xs font-bold transition-all duration-200 cursor-pointer ${
                   isActive
                     ? 'bg-white text-[#584235] shadow-md shadow-slate-300/50'
@@ -229,7 +248,7 @@ export default function InventoryPage() {
       {/* CONTAINER 1: Header & Action Card */}
       <InventoryHeaderCard
         searchTerm={searchTerm}
-        onSearchChange={setSearchTerm}
+        onSearchChange={handleSearchChange}
         onNewIngredientClick={handleOpenCreateModal}
         onViewKardexClick={() => handleOpenKardex(null)}
         onDownloadTemplateClick={handleDownloadTemplate}
@@ -237,6 +256,7 @@ export default function InventoryPage() {
         onImportExcelClick={() => setImportModalOpen(true)}
         downloadingTemplate={downloadingTemplate}
         exportingExcel={exportingExcel}
+        isAdmin={isAdmin}
       />
 
       {/* CONTAINER 2: Main Table / Loading / Error State */}
@@ -266,10 +286,14 @@ export default function InventoryPage() {
       ) : (
         <IngredientTable
           ingredients={filteredIngredients}
+          currentPage={currentPage}
+          onPageChange={setCurrentPage}
+          itemsPerPage={ITEMS_PER_PAGE}
           onAdjustStock={handleOpenAdjustStock}
           onViewKardex={handleOpenKardex}
           onEdit={handleOpenEditModal}
           onDelete={handleDeleteIngredient}
+          isAdmin={isAdmin}
         />
       )}
 
