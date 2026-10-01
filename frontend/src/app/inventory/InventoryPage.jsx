@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import { useSearchParams, useLocation } from 'react-router-dom';
 import { AlertCircle, RefreshCw, CheckCircle2, Layers, AlertTriangle } from 'lucide-react';
 import InventoryHeaderCard from './components/InventoryHeaderCard';
 import IngredientTable from './components/IngredientTable';
@@ -22,6 +23,9 @@ const ITEMS_PER_PAGE = 15;
 
 export default function InventoryPage() {
   const { isAdmin } = useAuth();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const location = useLocation();
+
   const [ingredients, setIngredients] = useState([]);
   const [alerts, setAlerts] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -31,10 +35,28 @@ export default function InventoryPage() {
   const [downloadingTemplate, setDownloadingTemplate] = useState(false);
   const [exportingExcel, setExportingExcel] = useState(false);
 
+  // Helper to detect if URL requested alerts tab
+  const getTargetFilter = useCallback(() => {
+    const tabParam = searchParams.get('tab') || searchParams.get('filter') || location.state?.filter;
+    if (tabParam === 'alerts' || tabParam === 'low_stock' || tabParam === 'alertas') {
+      return 'low_stock';
+    }
+    return 'all';
+  }, [searchParams, location.state]);
+
   // Filters, Search & Pagination
   const [searchTerm, setSearchTerm] = useState('');
-  const [activeFilter, setActiveFilter] = useState('all');
+  const [activeFilter, setActiveFilter] = useState(getTargetFilter);
   const [currentPage, setCurrentPage] = useState(1);
+
+  // Sync if query params change
+  useEffect(() => {
+    const target = getTargetFilter();
+    if (target !== activeFilter) {
+      setActiveFilter(target);
+      setCurrentPage(1);
+    }
+  }, [getTargetFilter]);
 
   const handleSearchChange = (value) => {
     setSearchTerm(value);
@@ -44,6 +66,12 @@ export default function InventoryPage() {
   const handleFilterChange = (filterId) => {
     setActiveFilter(filterId);
     setCurrentPage(1);
+    if (searchParams.get('tab') || searchParams.get('filter')) {
+      const nextParams = new URLSearchParams(searchParams);
+      nextParams.delete('tab');
+      nextParams.delete('filter');
+      setSearchParams(nextParams, { replace: true });
+    }
   };
 
   useEffect(() => {
