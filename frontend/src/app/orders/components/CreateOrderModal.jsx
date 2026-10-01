@@ -6,12 +6,10 @@ import {
   Trash2,
   Utensils,
   Search,
-  CheckCircle2,
   AlertCircle,
   RefreshCw,
-  ChefHat,
-  Box,
-  ShoppingCart
+  ShoppingCart,
+  RotateCcw,
 } from 'lucide-react';
 import { fetchProductsForOrders, fetchCategoriesForOrders } from '../services/orderService';
 import { formatCurrency } from '../utils/orderUtils';
@@ -30,7 +28,7 @@ export default function CreateOrderModal({
   const [activeCategory, setActiveCategory] = useState('all');
   const [searchTerm, setSearchTerm] = useState('');
 
-  // Cart / Order items state: [{ product, quantity, notes }]
+  // Cart / Order items state: [{ product, quantity, unitPrice, notes }]
   const [cart, setCart] = useState([]);
   const [orderNotes, setOrderNotes] = useState('');
 
@@ -80,7 +78,10 @@ export default function CreateOrderModal({
 
   // Cart total (unconditional hook)
   const cartTotal = useMemo(() => {
-    return cart.reduce((acc, item) => acc + item.product.salePrice * item.quantity, 0);
+    return cart.reduce(
+      (acc, item) => acc + Number(item.unitPrice ?? item.product.salePrice) * item.quantity,
+      0
+    );
   }, [cart]);
 
   // Total items count (unconditional hook)
@@ -100,9 +101,30 @@ export default function CreateOrderModal({
         };
         return updated;
       } else {
-        return [...prev, { product, quantity: 1, notes: '' }];
+        return [
+          ...prev,
+          {
+            product,
+            quantity: 1,
+            unitPrice: product.salePrice,
+            notes: '',
+          },
+        ];
       }
     });
+  };
+
+  // Update item unit price for current sale only
+  const handleItemPriceChange = (productId, rawValue) => {
+    if (rawValue !== '' && Number(rawValue) < 0) return;
+
+    setCart((prev) =>
+      prev.map((item) =>
+        item.product.id === productId
+          ? { ...item, unitPrice: rawValue }
+          : item
+      )
+    );
   };
 
   // Decrement or remove
@@ -150,7 +172,7 @@ export default function CreateOrderModal({
         items: cart.map((item) => ({
           productId: item.product.id,
           quantity: item.quantity,
-          unitPrice: item.product.salePrice,
+          unitPrice: Number(item.unitPrice ?? item.product.salePrice),
           notes: item.notes.trim() || undefined,
         })),
       };
@@ -181,9 +203,9 @@ export default function CreateOrderModal({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-fade-in">
-      <div className="bg-white rounded-3xl border border-slate-200/80 shadow-2xl w-full max-w-5xl max-h-[90vh] overflow-hidden flex flex-col">
+      <div className="bg-white rounded-3xl border border-slate-200/80 shadow-2xl w-full max-w-5xl h-[88vh] max-h-[90vh] overflow-hidden flex flex-col">
         {/* Modal Header */}
-        <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100 bg-slate-50/50">
+        <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100 bg-slate-50/50 shrink-0">
           <div className="flex items-center space-x-3">
             <div className="w-9 h-9 rounded-xl bg-red-50 text-[#E63946] flex items-center justify-center">
               <Utensils className="w-5 h-5" />
@@ -207,9 +229,9 @@ export default function CreateOrderModal({
         {/* Modal Body: Split into Menu Catalog (Left) and Cart Summary (Right) */}
         <div className="flex-1 overflow-hidden grid grid-cols-1 lg:grid-cols-12 min-h-0">
           {/* Left Column: Menu Selector (7 cols) */}
-          <div className="lg:col-span-7 p-5 border-b lg:border-b-0 lg:border-r border-slate-100 flex flex-col space-y-4 overflow-y-auto">
+          <div className="lg:col-span-7 p-5 border-b lg:border-b-0 lg:border-r border-slate-100 flex flex-col space-y-4 min-h-0 overflow-hidden">
             {/* Search & Category Pills */}
-            <div className="space-y-3">
+            <div className="space-y-3 shrink-0">
               <div className="relative">
                 <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
                 <input
@@ -255,7 +277,7 @@ export default function CreateOrderModal({
             {loadingMenu ? (
               <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 animate-pulse">
                 {[1, 2, 3, 4, 5, 6].map((i) => (
-                  <div key={i} className="h-24 rounded-2xl bg-slate-100" />
+                  <div key={i} className="h-28 rounded-2xl bg-slate-100" />
                 ))}
               </div>
             ) : filteredProducts.length === 0 ? (
@@ -263,7 +285,7 @@ export default function CreateOrderModal({
                 No se encontraron productos disponibles en esta categoría.
               </div>
             ) : (
-              <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 overflow-y-auto max-h-[50vh] pr-1">
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 auto-rows-max content-start items-stretch overflow-y-auto flex-1 min-h-0 pr-1">
                 {filteredProducts.map((p) => {
                   const cartItem = cart.find((item) => item.product.id === p.id);
 
@@ -272,7 +294,7 @@ export default function CreateOrderModal({
                       key={p.id}
                       type="button"
                       onClick={() => handleAddToCart(p)}
-                      className={`p-3.5 rounded-2xl border text-left flex flex-col justify-between transition-all duration-200 cursor-pointer hover:shadow-md hover:border-[#E63946] relative overflow-hidden group ${
+                      className={`min-h-[115px] p-3.5 rounded-2xl border text-left flex flex-col justify-between transition-all duration-200 cursor-pointer hover:shadow-md hover:border-[#E63946] relative group ${
                         cartItem
                           ? 'border-[#E63946] bg-red-50/20'
                           : 'border-slate-200 bg-white hover:bg-slate-50/50'
@@ -310,9 +332,9 @@ export default function CreateOrderModal({
           </div>
 
           {/* Right Column: Order / Cart Details (5 cols) */}
-          <div className="lg:col-span-5 p-5 bg-[#F8F9FA] flex flex-col justify-between space-y-4 overflow-y-auto">
-            <div className="space-y-4">
-              <div className="flex items-center justify-between border-b border-slate-200 pb-3">
+          <div className="lg:col-span-5 p-5 bg-[#F8F9FA] flex flex-col justify-between space-y-4 min-h-0 overflow-y-auto">
+            <div className="space-y-4 flex-1 flex flex-col min-h-0">
+              <div className="flex items-center justify-between border-b border-slate-200 pb-3 shrink-0">
                 <div className="flex items-center space-x-2">
                   <ShoppingCart className="w-4 h-4 text-[#E63946]" />
                   <h3 className="text-sm font-bold text-[#584235]">Detalle de la Comanda</h3>
@@ -323,7 +345,7 @@ export default function CreateOrderModal({
               </div>
 
               {error && (
-                <div className="p-3 rounded-xl bg-rose-50 border border-rose-200 text-xs font-semibold text-[#E63946] flex items-center space-x-2">
+                <div className="p-3 rounded-xl bg-rose-50 border border-rose-200 text-xs font-semibold text-[#E63946] flex items-center space-x-2 shrink-0">
                   <AlertCircle className="w-4 h-4 shrink-0" />
                   <span>{error}</span>
                 </div>
@@ -337,74 +359,130 @@ export default function CreateOrderModal({
                   <p className="text-[11px]">Haz clic en los productos de la izquierda para agregarlos.</p>
                 </div>
               ) : (
-                <div className="space-y-2.5 max-h-[35vh] overflow-y-auto pr-1">
-                  {cart.map((item) => (
-                    <div
-                      key={item.product.id}
-                      className="p-3 rounded-2xl bg-white border border-slate-200/80 shadow-xs space-y-2"
-                    >
-                      <div className="flex items-start justify-between gap-2">
-                        <div>
-                          <p className="text-xs font-bold text-[#584235] leading-tight">
-                            {item.product.name}
-                          </p>
-                          <span className="text-[11px] text-slate-400 font-medium">
-                            {formatCurrency(item.product.salePrice)} c/u
+                <div className="space-y-2.5 flex-1 min-h-0 overflow-y-auto pr-1">
+                  {cart.map((item) => {
+                    const effectiveUnitPrice = Number(item.unitPrice ?? item.product.salePrice);
+                    const lineSubtotal = effectiveUnitPrice * item.quantity;
+                    const isPriceModified =
+                      item.unitPrice !== '' &&
+                      effectiveUnitPrice !== Number(item.product.salePrice);
+
+                    return (
+                      <div
+                        key={item.product.id}
+                        className="p-3 rounded-2xl bg-white border border-slate-200/80 shadow-xs space-y-2"
+                      >
+                        <div className="flex items-start justify-between gap-2">
+                          <div className="space-y-1.5 flex-1 min-w-0">
+                            <p className="text-xs font-bold text-[#584235] leading-tight">
+                              {item.product.name}
+                            </p>
+
+                            {/* Editable Unit Price Control */}
+                            <div className="flex flex-wrap items-center gap-1.5">
+                              <label className="text-[10px] font-bold text-slate-400">
+                                Precio unit. ($):
+                              </label>
+                              <input
+                                type="number"
+                                step="0.01"
+                                min="0"
+                                value={item.unitPrice ?? item.product.salePrice}
+                                onChange={(e) =>
+                                  handleItemPriceChange(item.product.id, e.target.value)
+                                }
+                                onBlur={() => {
+                                  if (
+                                    item.unitPrice === '' ||
+                                    item.unitPrice === null ||
+                                    isNaN(Number(item.unitPrice)) ||
+                                    Number(item.unitPrice) < 0
+                                  ) {
+                                    handleItemPriceChange(
+                                      item.product.id,
+                                      item.product.salePrice
+                                    );
+                                  }
+                                }}
+                                className={`w-20 px-2 py-0.5 rounded-lg border text-xs font-bold text-[#584235] focus:outline-none focus:border-[#E63946] transition-colors ${
+                                  isPriceModified
+                                    ? 'bg-amber-50/70 border-amber-300'
+                                    : 'bg-slate-50 border-slate-200'
+                                }`}
+                              />
+
+                              {isPriceModified && (
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    handleItemPriceChange(
+                                      item.product.id,
+                                      item.product.salePrice
+                                    )
+                                  }
+                                  title={`Restaurar precio base (${formatCurrency(item.product.salePrice)})`}
+                                  className="inline-flex items-center space-x-1 px-1.5 py-0.5 rounded-md bg-amber-100/80 hover:bg-amber-200 text-amber-800 text-[10px] font-bold transition-colors cursor-pointer"
+                                >
+                                  <RotateCcw className="w-2.5 h-2.5" />
+                                  <span>Base: {formatCurrency(item.product.salePrice)}</span>
+                                </button>
+                              )}
+                            </div>
+                          </div>
+
+                          <span className="text-xs font-extrabold text-[#584235] shrink-0">
+                            {formatCurrency(lineSubtotal)}
                           </span>
                         </div>
 
-                        <span className="text-xs font-extrabold text-[#584235]">
-                          {formatCurrency(item.product.salePrice * item.quantity)}
-                        </span>
-                      </div>
+                        {/* Line notes input */}
+                        <input
+                          type="text"
+                          value={item.notes}
+                          onChange={(e) => handleItemNotesChange(item.product.id, e.target.value)}
+                          placeholder="Nota de cocina (ej: Sin salsa, Bien cocido)..."
+                          className="w-full px-2.5 py-1 rounded-xl bg-slate-50 border border-slate-200 text-[11px] text-[#584235] placeholder:text-slate-400 focus:outline-none focus:border-[#E63946]"
+                        />
 
-                      {/* Line notes input */}
-                      <input
-                        type="text"
-                        value={item.notes}
-                        onChange={(e) => handleItemNotesChange(item.product.id, e.target.value)}
-                        placeholder="Nota de cocina (ej: Sin salsa, Bien cocido)..."
-                        className="w-full px-2.5 py-1 rounded-xl bg-slate-50 border border-slate-200 text-[11px] text-[#584235] placeholder:text-slate-400 focus:outline-none focus:border-[#E63946]"
-                      />
-
-                      {/* Quantity Controls */}
-                      <div className="flex items-center justify-between pt-1 border-t border-slate-100">
-                        <button
-                          type="button"
-                          onClick={() => handleRemove(item.product.id)}
-                          className="text-[11px] font-bold text-slate-400 hover:text-rose-600 transition-colors flex items-center space-x-1 cursor-pointer"
-                        >
-                          <Trash2 className="w-3 h-3" />
-                          <span>Quitar</span>
-                        </button>
-
-                        <div className="flex items-center space-x-2 bg-slate-100 p-1 rounded-xl">
+                        {/* Quantity Controls */}
+                        <div className="flex items-center justify-between pt-1 border-t border-slate-100">
                           <button
                             type="button"
-                            onClick={() => handleDecrement(item.product.id)}
-                            className="w-6 h-6 rounded-lg bg-white hover:bg-slate-200 flex items-center justify-center text-slate-700 transition-colors cursor-pointer"
+                            onClick={() => handleRemove(item.product.id)}
+                            className="text-[11px] font-bold text-slate-400 hover:text-rose-600 transition-colors flex items-center space-x-1 cursor-pointer"
                           >
-                            <Minus className="w-3 h-3" />
+                            <Trash2 className="w-3 h-3" />
+                            <span>Quitar</span>
                           </button>
-                          <span className="text-xs font-bold text-[#584235] w-5 text-center">
-                            {item.quantity}
-                          </span>
-                          <button
-                            type="button"
-                            onClick={() => handleAddToCart(item.product)}
-                            className="w-6 h-6 rounded-lg bg-white hover:bg-slate-200 flex items-center justify-center text-slate-700 transition-colors cursor-pointer"
-                          >
-                            <Plus className="w-3 h-3" />
-                          </button>
+
+                          <div className="flex items-center space-x-2 bg-slate-100 p-1 rounded-xl">
+                            <button
+                              type="button"
+                              onClick={() => handleDecrement(item.product.id)}
+                              className="w-6 h-6 rounded-lg bg-white hover:bg-slate-200 flex items-center justify-center text-slate-700 transition-colors cursor-pointer"
+                            >
+                              <Minus className="w-3 h-3" />
+                            </button>
+                            <span className="text-xs font-bold text-[#584235] w-5 text-center">
+                              {item.quantity}
+                            </span>
+                            <button
+                              type="button"
+                              onClick={() => handleAddToCart(item.product)}
+                              className="w-6 h-6 rounded-lg bg-white hover:bg-slate-200 flex items-center justify-center text-slate-700 transition-colors cursor-pointer"
+                            >
+                              <Plus className="w-3 h-3" />
+                            </button>
+                          </div>
                         </div>
                       </div>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               )}
 
               {/* Order Notes / Table Info */}
-              <div className="space-y-1">
+              <div className="space-y-1 shrink-0">
                 <label className="text-[11px] font-bold text-slate-500 uppercase tracking-wider block">
                   Identificador / Mesa / Notas de Comanda
                 </label>
@@ -419,7 +497,7 @@ export default function CreateOrderModal({
             </div>
 
             {/* Total and Submit Action */}
-            <div className="pt-3 border-t border-slate-200 space-y-3">
+            <div className="pt-3 border-t border-slate-200 space-y-3 shrink-0">
               <div className="flex items-center justify-between">
                 <span className="text-xs font-bold text-slate-500 uppercase tracking-wider">
                   Total a Pagar
