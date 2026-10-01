@@ -67,7 +67,7 @@ export class UserService {
 
     const trimmedUsername = data.username.trim();
 
-    // Validar regla de contraseña de exactamente 6 caracteres alfanuméricos
+    // Validar regla de contraseña de mínimo 6 caracteres
     if (!isValidPassword(data.password)) {
       throw new Error('INVALID_PASSWORD');
     }
@@ -175,7 +175,7 @@ export class UserService {
   }
 
   /**
-   * Actualiza la contraseña de un usuario validando la regla de 6 caracteres.
+   * Actualiza la contraseña de un usuario validando la regla de mínimo 6 caracteres.
    */
   async updatePassword(id: number, password: string) {
     const user = await prisma.user.findUnique({ where: { id } });

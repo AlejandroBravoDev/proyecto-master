@@ -1,12 +1,12 @@
 import crypto from 'crypto';
 
 /**
- * Valida que la contraseña cumpla con la regla estricta:
- * Exactamente 6 caracteres alfanuméricos (letras o números).
+ * Valida que la contraseña cumpla con la regla:
+ * Mínimo 6 caracteres.
  */
 export function isValidPassword(password: string): boolean {
   if (typeof password !== 'string') return false;
-  return /^[a-zA-Z0-9]{6}$/.test(password);
+  return password.trim().length >= 6;
 }
 
 /**

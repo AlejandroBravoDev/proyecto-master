@@ -57,7 +57,7 @@ export class UserController {
       return res.status(201).json(user);
     } catch (error: any) {
       if (error.message === 'INVALID_PASSWORD') {
-        return res.status(400).json({ error: 'La contraseña debe tener exactamente 6 caracteres (letras o números).' });
+        return res.status(400).json({ error: 'La contraseña debe tener al menos 6 caracteres.' });
       }
       if (error.message === 'USERNAME_ALREADY_EXISTS') {
         return res.status(400).json({ error: 'El nombre de usuario ya está registrado.' });
@@ -114,7 +114,7 @@ export class UserController {
         return res.status(404).json({ error: 'Usuario no encontrado.' });
       }
       if (error.message === 'INVALID_PASSWORD') {
-        return res.status(400).json({ error: 'La contraseña debe tener exactamente 6 caracteres (letras o números).' });
+        return res.status(400).json({ error: 'La contraseña debe tener al menos 6 caracteres.' });
       }
       return res.status(500).json({ error: 'Error al actualizar contraseña', details: error.message || error });
     }
