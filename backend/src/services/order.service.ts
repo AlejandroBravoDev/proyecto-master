@@ -87,7 +87,7 @@ export class OrderService {
    * @param data Lista de productos solicitados, forma de pago opcional, impuestos/descuentos y notas
    */
   async createOrder(data: {
-    items: Array<{ productId: number; quantity: number; unitPrice?: number; notes?: string }>;
+    items: Array<{ productId: number; quantity: number; unitPrice?: number | string; notes?: string }>;
     notes?: string;
     paymentMethod?: PaymentMethod;
     tax?: number;
@@ -137,9 +137,14 @@ export class OrderService {
         throw new Error(`PRODUCT_UNAVAILABLE:${product.name}`);
       }
 
-      const unitPrice = Number(item.unitPrice ?? product.salePrice);
-      const itemSubtotal = unitPrice * qty;
-      subtotal += itemSubtotal;
+      const hasCustomPrice = item.unitPrice !== undefined && item.unitPrice !== null && String(item.unitPrice).trim() !== '';
+      const parsedCustomPrice = hasCustomPrice ? Number(item.unitPrice) : NaN;
+      const unitPrice = !isNaN(parsedCustomPrice) && parsedCustomPrice >= 0
+        ? Number(parsedCustomPrice.toFixed(2))
+        : Number(product.salePrice);
+
+      const itemSubtotal = Number((unitPrice * qty).toFixed(2));
+      subtotal = Number((subtotal + itemSubtotal).toFixed(2));
 
       orderDetailsData.push({
         productId: prodId,
@@ -157,9 +162,9 @@ export class OrderService {
       });
     }
 
-    const calculatedTax = Number(data.tax || 0);
-    const calculatedDiscount = Number(data.discount || 0);
-    const totalFinal = subtotal + calculatedTax - calculatedDiscount;
+    const calculatedTax = Number(Number(data.tax || 0).toFixed(2));
+    const calculatedDiscount = Number(Number(data.discount || 0).toFixed(2));
+    const totalFinal = Number((subtotal + calculatedTax - calculatedDiscount).toFixed(2));
 
     // 4. Transacción ACID: Generar correlativos únicos, crear comanda, factura (Sale) y descontar insumos
     return prisma.$transaction(async (tx) => {
