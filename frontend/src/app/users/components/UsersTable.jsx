@@ -112,7 +112,7 @@ export default function UsersTable({
                         <button
                           onClick={() => onResetPassword(u)}
                           className="p-1.5 rounded-xl bg-amber-50 hover:bg-amber-100 text-amber-700 transition-colors cursor-pointer"
-                          title="Reasignar contraseña (6 caracteres)"
+                          title="Reasignar contraseña (mínimo 6 caracteres)"
                         >
                           <KeyRound className="w-4 h-4" />
                         </button>

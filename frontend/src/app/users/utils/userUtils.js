@@ -3,13 +3,13 @@
  */
 
 /**
- * Validates strictly that password has exactly 6 alphanumeric characters.
+ * Validates that password has at least 6 characters.
  * @param {string} password
  * @returns {boolean}
  */
 export function isValidPassword6(password) {
   if (typeof password !== 'string') return false;
-  return /^[a-zA-Z0-9]{6}$/.test(password);
+  return password.trim().length >= 6;
 }
 
 /**

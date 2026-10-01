@@ -37,7 +37,7 @@ export default function PasswordResetModal({
     }
 
     if (!isValidPassword6(password)) {
-      setError('La contraseña debe tener exactamente 6 caracteres alfanuméricos (letras o números).');
+      setError('La contraseña debe tener al menos 6 caracteres.');
       return;
     }
 
@@ -101,16 +101,15 @@ export default function PasswordResetModal({
 
           <div className="space-y-1.5">
             <label className="text-xs font-bold text-[#584235] uppercase tracking-wider block">
-              Nueva Contraseña (6 caracteres) <span className="text-[#E63946]">*</span>
+              Nueva Contraseña (Mínimo 6 caracteres) <span className="text-[#E63946]">*</span>
             </label>
             <div className="relative">
               <Lock className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
               <input
                 type={showPassword ? 'text' : 'password'}
-                maxLength={6}
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
-                placeholder="Exactamente 6 caracteres"
+                placeholder="Mínimo 6 caracteres"
                 className="w-full pl-10 pr-11 py-2.5 rounded-2xl bg-[#F8F9FA] border border-slate-200 text-sm text-[#584235] focus:outline-none focus:border-[#E63946] focus:bg-white font-mono font-bold"
                 required
                 autoFocus
@@ -125,7 +124,7 @@ export default function PasswordResetModal({
               </button>
             </div>
             <p className="text-[10px] text-slate-400">
-              Usa exactamente 6 letras o números (sin espacios ni símbolos especiales).
+              Usa al menos 6 caracteres (sin espacios en blanco al inicio o final).
             </p>
           </div>
 

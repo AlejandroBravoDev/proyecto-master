@@ -35,8 +35,8 @@ export default function LoginPage() {
       return;
     }
 
-    if (!/^[a-zA-Z0-9]{6}$/.test(password)) {
-      setError('La contraseña debe tener exactamente 6 caracteres (letras o números).');
+    if (password.length < 6) {
+      setError('La contraseña debe tener al menos 6 caracteres.');
       return;
     }
 
@@ -116,17 +116,16 @@ export default function LoginPage() {
           {/* Password Input */}
           <div className="space-y-1.5">
             <label className="text-xs font-bold text-[#584235] uppercase tracking-wider block">
-              Contraseña (6 caracteres) <span className="text-[#E63946]">*</span>
+              Contraseña <span className="text-[#E63946]">*</span>
             </label>
             <div className="relative">
               <Lock className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
               <input
                 type={showPassword ? 'text' : 'password'}
                 autoComplete="current-password"
-                maxLength={6}
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
-                placeholder="Exactamente 6 caracteres"
+                placeholder="Tu contraseña (mínimo 6 caracteres)"
                 className="w-full pl-10 pr-11 py-2.5 rounded-2xl bg-[#F8F9FA] border border-slate-200 text-sm text-[#584235] placeholder:text-slate-400 focus:outline-none focus:border-[#E63946] focus:bg-white transition-all font-medium font-mono"
                 required
               />
@@ -140,7 +139,7 @@ export default function LoginPage() {
               </button>
             </div>
             <p className="text-[10px] text-slate-400 font-medium">
-              Nota: La contraseña debe componerse de exactamente 6 letras o números.
+              Nota: La contraseña debe tener al menos 6 caracteres.
             </p>
           </div>
 

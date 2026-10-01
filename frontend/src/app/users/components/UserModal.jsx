@@ -69,7 +69,7 @@ export default function UserModal({
         return;
       }
       if (!isValidPassword6(password)) {
-        setError('La contraseña debe tener exactamente 6 caracteres alfanuméricos (letras o números).');
+        setError('La contraseña debe tener al menos 6 caracteres.');
         return;
       }
     }
@@ -203,16 +203,15 @@ export default function UserModal({
           {!isEditing && (
             <div className="space-y-1 pt-1">
               <label className="text-xs font-bold text-[#584235] uppercase tracking-wider block">
-                Contraseña Inicial (Exactamente 6 caracteres) <span className="text-[#E63946]">*</span>
+                Contraseña Inicial (Mínimo 6 caracteres) <span className="text-[#E63946]">*</span>
               </label>
               <div className="relative">
                 <Lock className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
                 <input
                   type={showPassword ? 'text' : 'password'}
-                  maxLength={6}
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
-                  placeholder="6 caracteres alfanuméricos"
+                  placeholder="Mínimo 6 caracteres"
                   className="w-full pl-10 pr-11 py-2.5 rounded-2xl bg-[#F8F9FA] border border-slate-200 text-xs text-[#584235] focus:outline-none focus:border-[#E63946] focus:bg-white font-mono font-bold"
                   required
                 />
@@ -226,7 +225,7 @@ export default function UserModal({
                 </button>
               </div>
               <p className="text-[10px] text-slate-400">
-                La contraseña debe componerse de exactamente 6 letras o números.
+                La contraseña debe tener al menos 6 caracteres.
               </p>
             </div>
           )}
