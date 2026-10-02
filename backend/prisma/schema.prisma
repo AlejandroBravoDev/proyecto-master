@@ -284,8 +284,9 @@ model InventoryMovement {
 // Registro exclusivo de apertura con base inicial y cierre del día/turno
 // ----------------------------------------------------
 enum CashSessionStatus {
-  OPEN    // Caja abierta en operación
-  CLOSED  // Caja cerrada
+  OPEN        // Caja abierta en operación
+  CLOSED      // Caja cerrada
+  LATE_CLOSED // Caja cerrada a destiempo (al día siguiente o posterior)
 }
 
 model CashSession {

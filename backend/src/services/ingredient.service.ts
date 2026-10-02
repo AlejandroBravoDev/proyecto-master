@@ -12,10 +12,19 @@ import ExcelJS from 'exceljs';
 
 export class IngredientService {
   /**
-   * Obtiene todos los insumos ordenados alfabéticamente.
+   * Obtiene todos los insumos ordenados alfabéticamente con filtro opcional por nombre o descripción.
+   * @param searchTerm Término de búsqueda opcional
    */
-  async getAllIngredients() {
+  async getAllIngredients(searchTerm?: string) {
+    const where = searchTerm && searchTerm.trim() ? {
+      OR: [
+        { name: { contains: searchTerm.trim() } },
+        { description: { contains: searchTerm.trim() } }
+      ]
+    } : undefined;
+
     return prisma.ingredient.findMany({
+      where,
       orderBy: { name: 'asc' }
     });
   }

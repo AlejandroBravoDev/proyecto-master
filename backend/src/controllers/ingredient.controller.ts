@@ -14,9 +14,10 @@ export class IngredientController {
    * GET /api/ingredients
    * Retorna el listado completo de insumos.
    */
-  async getIngredients(_req: Request, res: Response) {
+  async getIngredients(req: Request, res: Response) {
     try {
-      const ingredients = await ingredientService.getAllIngredients();
+      const search = typeof req.query.search === 'string' ? req.query.search : undefined;
+      const ingredients = await ingredientService.getAllIngredients(search);
       return res.json(ingredients);
     } catch (error) {
       return res.status(500).json({ error: 'Error al obtener los insumos', details: error });

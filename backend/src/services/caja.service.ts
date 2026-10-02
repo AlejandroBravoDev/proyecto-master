@@ -88,7 +88,7 @@ export class CajaService {
     if (!activeSession) {
       // Obtener la última sesión cerrada como referencia
       const lastClosed = await prisma.cashSession.findFirst({
-        where: { status: 'CLOSED' },
+        where: { status: { in: ['CLOSED', 'LATE_CLOSED'] } },
         orderBy: { closedAt: 'desc' },
         include: {
           openedByUser: USER_SELECT_FIELDS,
@@ -208,7 +208,17 @@ export class CajaService {
     // 2. Calcular el total contado al cierre a partir del desglose
     const { total: finalAmount, normalized: finalNormalized } = this.calculateDenominationsTotal(data.denominations);
 
-    // 3. Transacción atómica: Actualizar sesión a CLOSED y archivar comandas activas
+    const openedDate = new Date(activeSession.openedAt);
+    const closedDate = new Date();
+
+    // Compara si la fecha de apertura y la de cierre corresponden a días calendario diferentes
+    const openedDayStr = `${openedDate.getFullYear()}-${String(openedDate.getMonth() + 1).padStart(2, '0')}-${String(openedDate.getDate()).padStart(2, '0')}`;
+    const closedDayStr = `${closedDate.getFullYear()}-${String(closedDate.getMonth() + 1).padStart(2, '0')}-${String(closedDate.getDate()).padStart(2, '0')}`;
+
+    const isLate = openedDayStr !== closedDayStr;
+    const finalStatus = isLate ? 'LATE_CLOSED' : 'CLOSED';
+
+    // 3. Transacción atómica: Actualizar sesión a CLOSED o LATE_CLOSED y archivar comandas activas
     const closedSession = await prisma.$transaction(async (tx) => {
       // A. Desactivar comandas activas del turno
       await tx.order.updateMany({
@@ -220,8 +230,8 @@ export class CajaService {
       return tx.cashSession.update({
         where: { id: activeSession.id },
         data: {
-          status: 'CLOSED',
-          closedAt: new Date(),
+          status: finalStatus,
+          closedAt: closedDate,
           finalAmount,
           finalDenominations: JSON.stringify(finalNormalized),
           closingNotes: data.closingNotes || null,
