@@ -30,7 +30,7 @@ export default function SessionDetailModal({
 
   if (!isOpen) return null;
 
-  const isClosed = session?.status === 'CLOSED';
+  const isClosed = session?.status === 'CLOSED' || session?.status === 'LATE_CLOSED';
   const initialDenominations = session?.initialDenominations || {};
   const finalDenominations = session?.finalDenominations || {};
 
@@ -44,9 +44,29 @@ export default function SessionDetailModal({
               <Scale className="w-5 h-5" />
             </div>
             <div>
-              <h2 className="text-lg font-bold text-[#584235]">
-                Detalle de Sesión: {session?.sessionNumber || `ID #${sessionId}`}
-              </h2>
+              <div className="flex flex-wrap items-center gap-2">
+                <h2 className="text-lg font-bold text-[#584235]">
+                  Detalle de Sesión: {session?.sessionNumber || `ID #${sessionId}`}
+                </h2>
+                {session?.status === 'LATE_CLOSED' && (
+                  <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-[11px] font-bold border bg-amber-50 text-amber-800 border-amber-300">
+                    <span className="w-1.5 h-1.5 rounded-full mr-1.5 bg-amber-500" />
+                    Cerrada a destiempo
+                  </span>
+                )}
+                {session?.status === 'CLOSED' && (
+                  <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-[11px] font-bold border bg-slate-100 text-slate-600 border-slate-200">
+                    <span className="w-1.5 h-1.5 rounded-full mr-1.5 bg-slate-400" />
+                    Cerrado
+                  </span>
+                )}
+                {session?.status === 'OPEN' && (
+                  <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-[11px] font-bold border bg-emerald-50 text-emerald-700 border-emerald-200">
+                    <span className="w-1.5 h-1.5 rounded-full mr-1.5 bg-emerald-500" />
+                    Abierto
+                  </span>
+                )}
+              </div>
               <p className="text-xs text-slate-400">
                 Desglose físico de monedas y billetes (Apertura y Cierre)
               </p>

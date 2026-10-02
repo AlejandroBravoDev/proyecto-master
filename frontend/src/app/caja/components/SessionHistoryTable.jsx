@@ -113,9 +113,23 @@ export default function SessionHistoryTable({
               </tr>
             ) : (
               paginatedSessions.map((s) => {
-                const isClosed = s.status === 'CLOSED';
+                const isSessionFinished = s.status === 'CLOSED' || s.status === 'LATE_CLOSED';
                 const openedByName =
                   s.openedByUser?.fullName || s.openedByUser?.username || 'Sistema';
+
+                let badgeClass = 'bg-emerald-50 text-emerald-700 border-emerald-200';
+                let dotClass = 'bg-emerald-500';
+                let statusLabel = 'Abierto';
+
+                if (s.status === 'LATE_CLOSED') {
+                  badgeClass = 'bg-amber-50 text-amber-800 border-amber-300';
+                  dotClass = 'bg-amber-500';
+                  statusLabel = 'Cerrada a destiempo';
+                } else if (s.status === 'CLOSED') {
+                  badgeClass = 'bg-slate-100 text-slate-600 border-slate-200';
+                  dotClass = 'bg-slate-400';
+                  statusLabel = 'Cerrado';
+                }
 
                 return (
                   <tr key={s.id} className="hover:bg-slate-50/80 transition-colors">
@@ -127,18 +141,10 @@ export default function SessionHistoryTable({
                     {/* Status */}
                     <td className="py-3.5 px-4 whitespace-nowrap">
                       <span
-                        className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-[11px] font-bold border ${
-                          isClosed
-                            ? 'bg-slate-100 text-slate-600 border-slate-200'
-                            : 'bg-emerald-50 text-emerald-700 border-emerald-200'
-                        }`}
+                        className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-[11px] font-bold border ${badgeClass}`}
                       >
-                        <span
-                          className={`w-1.5 h-1.5 rounded-full mr-1.5 ${
-                            isClosed ? 'bg-slate-400' : 'bg-emerald-500'
-                          }`}
-                        />
-                        {isClosed ? 'Cerrado' : 'Abierto'}
+                        <span className={`w-1.5 h-1.5 rounded-full mr-1.5 ${dotClass}`} />
+                        {statusLabel}
                       </span>
                     </td>
 
@@ -164,7 +170,7 @@ export default function SessionHistoryTable({
 
                     {/* Conteo Final */}
                     <td className="py-3.5 px-4 text-right font-black text-emerald-700">
-                      {isClosed ? formatCurrency(s.finalAmount || 0) : '—'}
+                      {isSessionFinished ? formatCurrency(s.finalAmount || 0) : '—'}
                     </td>
 
                     {/* Actions */}

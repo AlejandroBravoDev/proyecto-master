@@ -185,11 +185,13 @@ export async function deleteCategory(id) {
 }
 
 /**
- * Fetches active warehouse ingredients for recipe configuration.
+ * Fetches active warehouse ingredients for recipe configuration with optional search term.
+ * @param {string} [searchTerm='']
  * @returns {Promise<Array>}
  */
-export async function fetchIngredientsForRecipe() {
-  const response = await fetch(PRODUCT_ENDPOINTS.INGREDIENTS, {
+export async function fetchIngredientsForRecipe(searchTerm = '') {
+  const query = searchTerm ? `?search=${encodeURIComponent(searchTerm)}` : '';
+  const response = await fetch(`${PRODUCT_ENDPOINTS.INGREDIENTS}${query}`, {
     method: 'GET',
     headers: {
       'Accept': 'application/json',

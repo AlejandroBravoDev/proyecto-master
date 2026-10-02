@@ -16,7 +16,7 @@ export default function EditCajaSessionModal({
   const [error, setError] = useState('');
   const isSubmittingRef = useRef(false);
 
-  const isClosed = session?.status === 'CLOSED';
+  const isClosed = session?.status === 'CLOSED' || session?.status === 'LATE_CLOSED';
 
   useEffect(() => {
     isSubmittingRef.current = false;

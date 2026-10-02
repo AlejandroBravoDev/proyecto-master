@@ -3,10 +3,14 @@ import { ShoppingBag } from 'lucide-react';
 
 export default function TopProductsWidget({ products = [] }) {
   const hasProducts = Array.isArray(products) && products.length > 0;
+  const topProducts = hasProducts ? products.slice(0, 3) : [];
 
   return (
     <div className="bg-white rounded-3xl border border-slate-200/80 shadow-sm p-6 flex flex-col justify-between min-h-70">
-      <h2 className="text-lg font-bold text-brand-text mb-4">Productos más vendidos</h2>
+      <div className="mb-4">
+        <h2 className="text-lg font-bold text-brand-text">Productos más vendidos</h2>
+        <p className="text-xs text-slate-400 mt-0.5">Top 3 de platos y productos con mayor rotación</p>
+      </div>
 
       {!hasProducts ? (
         <div className="flex-1 flex flex-col items-center justify-center p-6 text-center text-slate-400 bg-slate-50/50 rounded-2xl border border-dashed border-slate-200">
@@ -17,8 +21,8 @@ export default function TopProductsWidget({ products = [] }) {
           <p className="text-xs text-slate-400 mt-1">Aún no se ha registrado ninguna venta en el sistema.</p>
         </div>
       ) : (
-        <div className="space-y-4 flex-1 flex flex-col justify-around">
-          {products.map((item, index) => {
+        <div className="space-y-3.5 flex-1 flex flex-col justify-around py-1">
+          {topProducts.map((item, index) => {
             const rank = index + 1;
             const isTop = rank === 1;
 

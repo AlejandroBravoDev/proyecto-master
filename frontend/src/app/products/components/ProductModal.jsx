@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { X, Plus, Trash2, ChefHat, Box, AlertCircle, RefreshCw } from 'lucide-react';
 import { fetchIngredientsForRecipe } from '../services/productService';
+import CustomSelect from '../../common/CustomSelect';
 
 export default function ProductModal({
   isOpen,
@@ -18,8 +19,6 @@ export default function ProductModal({
 
   // Dynamic Recipe Ingredients
   const [recipeIngredients, setRecipeIngredients] = useState([]);
-  const [warehouseIngredients, setWarehouseIngredients] = useState([]);
-  const [loadingIngredients, setLoadingIngredients] = useState(false);
 
   const [error, setError] = useState('');
   const [saving, setSaving] = useState(false);
@@ -27,7 +26,7 @@ export default function ProductModal({
 
   const isEditing = Boolean(initialData);
 
-  // Populate or reset form on open
+  // Populate or reset form on open (ZERO API calls on modal open)
   useEffect(() => {
     isSubmittingRef.current = false;
     if (isOpen) {
@@ -47,6 +46,7 @@ export default function ProductModal({
               ingredientId: rd.ingredientId,
               quantity: rd.quantity,
               measurementUnit: rd.measurementUnit || rd.ingredient?.measurementUnit || '',
+              ingredientName: rd.ingredient?.name || '',
             }))
           );
         } else {
@@ -61,32 +61,19 @@ export default function ProductModal({
         setAvailable(true);
         setRecipeIngredients([]);
       }
-
-      // Fetch warehouse ingredients for recipe options
-      setLoadingIngredients(true);
-      fetchIngredientsForRecipe()
-        .then((data) => {
-          setWarehouseIngredients(Array.isArray(data) ? data : []);
-          setLoadingIngredients(false);
-        })
-        .catch(() => {
-          setWarehouseIngredients([]);
-          setLoadingIngredients(false);
-        });
     }
   }, [isOpen, initialData, categories]);
 
   if (!isOpen) return null;
 
   const handleAddRecipeRow = () => {
-    if (warehouseIngredients.length === 0) return;
-    const firstIng = warehouseIngredients[0];
     setRecipeIngredients((prev) => [
       ...prev,
       {
-        ingredientId: firstIng.id,
+        ingredientId: '',
         quantity: 1,
-        measurementUnit: firstIng.measurementUnit || 'unidad',
+        measurementUnit: '',
+        ingredientName: '',
       },
     ]);
   };
@@ -95,14 +82,14 @@ export default function ProductModal({
     setRecipeIngredients((prev) => prev.filter((_, idx) => idx !== index));
   };
 
-  const handleIngredientChange = (index, ingId) => {
-    const selected = warehouseIngredients.find((i) => String(i.id) === String(ingId));
+  const handleIngredientChange = (index, ingId, selectedOption) => {
     setRecipeIngredients((prev) => {
       const updated = [...prev];
       updated[index] = {
         ...updated[index],
-        ingredientId: Number(ingId),
-        measurementUnit: selected ? selected.measurementUnit : updated[index].measurementUnit,
+        ingredientId: ingId ? Number(ingId) : '',
+        measurementUnit: selectedOption ? selectedOption.measurementUnit : updated[index].measurementUnit,
+        ingredientName: selectedOption ? selectedOption.name : updated[index].ingredientName,
       };
       return updated;
     });
@@ -154,12 +141,20 @@ export default function ProductModal({
       };
 
       if (!isEditing && productType === 'PREPARED' && recipeIngredients.length > 0) {
+        const hasInvalid = recipeIngredients.some(
+          (item) => !item.ingredientId || Number(item.quantity) <= 0
+        );
+        if (hasInvalid) {
+          setError('Por favor selecciona un insumo válido y una cantidad mayor a 0 para cada fila de la receta.');
+          return;
+        }
+
         payload.recipe = {
           name: `Receta de ${name.trim()}`,
           ingredients: recipeIngredients.map((item) => ({
             ingredientId: Number(item.ingredientId),
             quantity: Number(item.quantity),
-            measurementUnit: String(item.measurementUnit),
+            measurementUnit: String(item.measurementUnit || 'unidad'),
           })),
         };
       }
@@ -178,7 +173,7 @@ export default function ProductModal({
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-fade-in">
       <div className="bg-white rounded-3xl border border-slate-200/80 shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-hidden flex flex-col">
         {/* Modal Header */}
-        <div className="flex items-center justify-between px-6 py-5 border-b border-slate-100 bg-slate-50/50">
+        <div className="flex items-center justify-between px-6 py-5 border-b border-slate-100 bg-slate-50/50 shrink-0">
           <div className="flex items-center space-x-3">
             <div className="w-9 h-9 rounded-xl bg-red-50 text-[#E63946] flex items-center justify-center">
               {productType === 'PREPARED' ? <ChefHat className="w-5 h-5" /> : <Box className="w-5 h-5" />}
@@ -346,41 +341,55 @@ export default function ProductModal({
                 <button
                   type="button"
                   onClick={handleAddRecipeRow}
-                  disabled={warehouseIngredients.length === 0}
-                  className="flex items-center space-x-1 px-3 py-1.5 rounded-xl bg-orange-50 text-[#FF7A00] hover:bg-orange-100 text-xs font-bold transition-colors cursor-pointer border border-orange-200 disabled:opacity-50"
+                  className="flex items-center space-x-1 px-3 py-1.5 rounded-xl bg-orange-50 text-[#FF7A00] hover:bg-orange-100 text-xs font-bold transition-colors cursor-pointer border border-orange-200"
                 >
                   <Plus className="w-3.5 h-3.5" />
                   <span>Añadir Insumo</span>
                 </button>
               </div>
 
-              {loadingIngredients ? (
-                <div className="p-4 text-center text-xs text-slate-400 animate-pulse">
-                  Cargando catálogo de materias primas...
-                </div>
-              ) : recipeIngredients.length === 0 ? (
+              {recipeIngredients.length === 0 ? (
                 <div className="p-4 rounded-2xl bg-[#F8F9FA] border border-dashed border-slate-300 text-center text-xs text-slate-400">
-                  No se han agregado insumos a la receta de este producto.
+                  No se han agregado insumos a la receta de este producto. Haz clic en "Añadir Insumo" para configurar los ingredientes.
                 </div>
               ) : (
-                <div className="space-y-2 max-h-48 overflow-y-auto pr-1">
+                <div className="space-y-2.5">
                   {recipeIngredients.map((item, idx) => (
                     <div
                       key={idx}
                       className="flex items-center space-x-2 p-2.5 rounded-2xl bg-slate-50 border border-slate-200"
                     >
-                      {/* Ingredient Dropdown */}
-                      <select
-                        value={item.ingredientId}
-                        onChange={(e) => handleIngredientChange(idx, e.target.value)}
-                        className="flex-1 px-3 py-1.5 rounded-xl bg-white border border-slate-200 text-xs font-medium text-[#584235] focus:outline-none focus:border-[#FF7A00]"
-                      >
-                        {warehouseIngredients.map((ing) => (
-                          <option key={ing.id} value={ing.id}>
-                            {ing.name} ({ing.measurementUnit})
-                          </option>
-                        ))}
-                      </select>
+                      {/* Searchable CustomSelect Combobox */}
+                      <div className="flex-1 min-w-0">
+                        <CustomSelect
+                          value={item.ingredientId}
+                          initialOption={
+                            item.ingredientId
+                              ? {
+                                  id: item.ingredientId,
+                                  name: item.ingredientName || `Insumo #${item.ingredientId}`,
+                                  measurementUnit: item.measurementUnit,
+                                }
+                              : null
+                          }
+                          loadOptions={fetchIngredientsForRecipe}
+                          placeholder="Buscar o seleccionar insumo..."
+                          searchPlaceholder="Buscar por nombre..."
+                          onChange={(ingId, selectedOpt) => handleIngredientChange(idx, ingId, selectedOpt)}
+                          renderOption={(option) => (
+                            <div className="flex items-center justify-between w-full py-0.5">
+                              <span className="font-semibold text-[#584235] truncate mr-2">
+                                {option.name}
+                              </span>
+                              {option.measurementUnit && (
+                                <span className="text-[10px] font-bold text-slate-400 bg-slate-100 px-2 py-0.5 rounded-md shrink-0">
+                                  {option.measurementUnit}
+                                </span>
+                              )}
+                            </div>
+                          )}
+                        />
+                      </div>
 
                       {/* Quantity Input */}
                       <input
@@ -391,19 +400,19 @@ export default function ProductModal({
                         value={item.quantity}
                         onChange={(e) => handleQuantityChange(idx, e.target.value)}
                         placeholder="Cantidad"
-                        className="w-24 px-3 py-1.5 rounded-xl bg-white border border-slate-200 text-xs font-medium text-[#584235] focus:outline-none focus:border-[#FF7A00]"
+                        className="w-24 px-3 py-2 rounded-xl bg-white border border-slate-200 text-xs font-medium text-[#584235] focus:outline-none focus:border-[#FF7A00]"
                       />
 
                       {/* Measurement Unit Tag */}
-                      <span className="text-xs font-semibold text-slate-400 w-14 text-center truncate">
-                        {item.measurementUnit}
+                      <span className="text-xs font-semibold text-slate-400 w-16 text-center truncate">
+                        {item.measurementUnit || '—'}
                       </span>
 
                       {/* Remove Button */}
                       <button
                         type="button"
                         onClick={() => handleRemoveRecipeRow(idx)}
-                        className="p-1.5 text-slate-400 hover:text-[#E63946] hover:bg-rose-50 rounded-lg transition-colors cursor-pointer"
+                        className="p-1.5 text-slate-400 hover:text-[#E63946] hover:bg-rose-50 rounded-lg transition-colors cursor-pointer shrink-0"
                         title="Quitar insumo"
                       >
                         <Trash2 className="w-3.5 h-3.5" />

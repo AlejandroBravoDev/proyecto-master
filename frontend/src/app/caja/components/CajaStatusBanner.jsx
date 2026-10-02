@@ -109,9 +109,17 @@ export default function CajaStatusBanner({
         {lastClosedSession && (
           <div className="bg-white/5 rounded-2xl p-3.5 border border-white/10 flex flex-wrap items-center gap-4 text-xs">
             <div>
-              <span className="text-[10px] text-slate-400 font-bold uppercase block">
-                Último Cierre ({lastClosedSession.sessionNumber})
-              </span>
+              <div className="flex items-center space-x-2">
+                <span className="text-[10px] text-slate-400 font-bold uppercase block">
+                  Último Cierre ({lastClosedSession.sessionNumber})
+                </span>
+                {lastClosedSession.status === 'LATE_CLOSED' && (
+                  <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold border bg-amber-50 text-amber-800 border-amber-300">
+                    <span className="w-1.5 h-1.5 rounded-full mr-1 bg-amber-500" />
+                    Cerrada a destiempo
+                  </span>
+                )}
+              </div>
               <span className="font-bold text-slate-200 block">
                 {formatDateTime(lastClosedSession.closedAt)}
               </span>
