@@ -214,8 +214,10 @@ function terminateBackend(): void {
  * Crea la ventana principal de la aplicación
  */
 function createMainWindow(frontendIndexPath: string): void {
+
   mainWindow = new BrowserWindow({
     title: 'Sistema Restaurante',
+    icon: path.join(__dirname, '../masterFoodLogo.ico'),
     width: 1280,
     height: 800,
     minWidth: 1000,
