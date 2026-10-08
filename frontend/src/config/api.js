@@ -6,7 +6,7 @@
 export const getApiBaseUrl = () => {
   // 1. Si se definió explícitamente una variable de entorno en .env (ej: VITE_API_URL)
   if (import.meta.env.VITE_API_URL !== undefined && import.meta.env.VITE_API_URL !== '') {
-    return import.meta.env.VITE_API_URL;
+    return import.meta.env.VITE_API_URL.replace(/\/+$/, '');
   }
 
   // 2. Entorno Web en Producción (Railway / VPS / Dominio en la nube)

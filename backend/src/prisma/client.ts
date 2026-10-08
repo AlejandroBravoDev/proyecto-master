@@ -22,7 +22,6 @@ const getDatabasePath = (): string => {
 };
 
 const dbPath = getDatabasePath();
-console.log(`[PrismaClient] Conectando a SQLite en: ${dbPath}`);
 
 // 2. Inicializar el adaptador de better-sqlite3 con la ruta especificada
 const adapter = new PrismaBetterSqlite3({ url: dbPath });

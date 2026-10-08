@@ -192,7 +192,6 @@ export async function initializeDatabase(): Promise<void> {
     fs.mkdirSync(backupDir, { recursive: true });
   }
 
-  console.log(`[DB Init] Inicializando SQLite en: ${dbPath}`);
   const db = new Database(dbPath);
   db.pragma('journal_mode = WAL');
   db.pragma('foreign_keys = ON');
@@ -209,7 +208,6 @@ export async function initializeDatabase(): Promise<void> {
     // 2. Migración inicial 001_initial_schema
     const check001 = db.prepare('SELECT id FROM "_migrations" WHERE id = ?').get('001_initial_schema');
     if (!check001) {
-      console.log('[DB Init] Aplicando esquema DDL inicial...');
       let ddl = INITIAL_SCHEMA_SQL;
 
       const migrationFile = path.resolve(__dirname, '../../prisma/migrations/001_initial_schema.sql');
@@ -224,21 +222,17 @@ export async function initializeDatabase(): Promise<void> {
         db.prepare('INSERT INTO "_migrations" (id) VALUES (?)').run('001_initial_schema');
       });
       applyTx();
-      console.log('[DB Init] ✅ Esquema inicial aplicado.');
 
       // Sembrar datos de muestra si categorías está vacía
       const catCount = (db.prepare('SELECT count(*) as c FROM categories').get() as { c: number }).c;
       if (catCount === 0) {
-        console.log('[DB Init] Sembrando catálogo base...');
         seedInitialData(db);
-        console.log('[DB Init] ✅ Catálogo base sembrado.');
       }
     }
 
     // 3. Migración incremental 002_users_auth_and_session_orders
     const check002 = db.prepare('SELECT id FROM "_migrations" WHERE id = ?').get('002_users_auth_and_session_orders');
     if (!check002) {
-      console.log('[DB Init] Aplicando migración 002_users_auth_and_session_orders...');
       const mig002Tx = db.transaction(() => {
         // A. Crear tabla users si no existe
         db.exec(`
@@ -286,19 +280,16 @@ export async function initializeDatabase(): Promise<void> {
         db.prepare('INSERT INTO "_migrations" (id) VALUES (?)').run('002_users_auth_and_session_orders');
       });
       mig002Tx();
-      console.log('[DB Init] ✅ Migración 002 aplicada con éxito.');
     }
 
     // 4. Sembrar Administrador por defecto obligatorio si no existe
     const adminUser = db.prepare('SELECT id FROM users WHERE lower(username) = lower(?)').get('Admin');
     if (!adminUser) {
-      console.log('[DB Init] Sembrando usuario administrador por defecto...');
       const adminHash = hashPassword('123456');
       db.prepare(`
         INSERT INTO users (full_name, username, password_hash, role, active, joined_at, created_at, updated_at)
         VALUES (?, ?, ?, 'ADMIN', 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
       `).run('Administrador', 'Admin', adminHash);
-      console.log('[DB Init] ✅ Usuario Admin/123456 sembrado.');
     }
 
     // 5. Backup diario
@@ -356,9 +347,7 @@ async function runDailyBackup(db: Database.Database, backupDir: string): Promise
     const backupFilePath = path.join(backupDir, backupFileName);
 
     if (!fs.existsSync(backupFilePath)) {
-      console.log(`[DB Init] Creando copia de seguridad diaria: ${backupFileName}...`);
       await db.backup(backupFilePath);
-      console.log(`[DB Init] ✅ Copia de seguridad creada en: ${backupFilePath}`);
     }
   } catch (err) {
     console.warn('[DB Init] Advertencia durante backup diario:', err);
