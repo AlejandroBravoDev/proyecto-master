@@ -1,34 +1,22 @@
 /**
- * Dynamic API Base URL resolver.
- * - Electron Desktop Shell: resolves via window.electronAPI
- * - Web Production (VPS / Cloud / Domain): returns '' (relative URLs like /api/...)
+ * Dynamic API Base URL resolver for Web Application.
+ * - Web Production (Railway / VPS / Cloud): returns '' (relative URLs: /api/...)
  * - Web Development (Vite dev server): uses VITE_API_URL or defaults to http://localhost:3001
  */
 export const getApiBaseUrl = () => {
-  // 1. Entorno de escritorio Electron
-  if (typeof window !== 'undefined' && window.electronAPI) {
-    if (typeof window.electronAPI.getApiUrl === 'function') {
-      const url = window.electronAPI.getApiUrl();
-      if (url) return url;
-    }
-    if (window.electronAPI.apiUrl) {
-      return window.electronAPI.apiUrl;
-    }
-  }
-
-  // 2. Si se definió explícitamente una variable de entorno en .env
+  // 1. Si se definió explícitamente una variable de entorno en .env (ej: VITE_API_URL)
   if (import.meta.env.VITE_API_URL !== undefined && import.meta.env.VITE_API_URL !== '') {
     return import.meta.env.VITE_API_URL;
   }
 
-  // 3. Entorno Web en Producción (Dominio / VPS / Servidor)
-  // Cadena vacía para que todas las llamadas sean relativas al mismo dominio (/api/...)
-  // evitando problemas de CORS, Mixed Content o errores con localhost en otros dispositivos.
+  // 2. Entorno Web en Producción (Railway / VPS / Dominio en la nube)
+  // Cadena vacía para que todas las llamadas sean relativas al mismo host (/api/...)
+  // evitando problemas de CORS, Mixed Content o errores de llamadas a localhost en clientes remotos.
   if (import.meta.env.PROD) {
     return '';
   }
 
-  // 4. Entorno de desarrollo local (Vite dev server en localhost:5173 hacia backend en :3001)
+  // 3. Entorno de desarrollo local (Vite dev server en localhost:5173 apuntando a backend en :3001)
   return 'http://localhost:3001';
 };
 
