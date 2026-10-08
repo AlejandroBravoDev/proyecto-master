@@ -64,7 +64,7 @@ if (frontendDist) {
   app.use(express.static(frontendDist));
 
   // Redirigir cualquier ruta que no sea /api ni /health al index.html de React (SPA Client Routing)
-  app.get('*', (req: Request, res: Response, next: NextFunction) => {
+  app.get('{*splat}', (req: Request, res: Response, next: NextFunction) => {
     if (req.path.startsWith('/api') || req.path.startsWith('/health')) {
       return next();
     }
@@ -103,7 +103,7 @@ async function startServer() {
 
 startServer();
 
-// Manejo de señales de terminación para cierre limpio (llamado por Electron)
+// Manejo de señales de terminación para cierre limpio (SIGTERM / SIGINT para Railway / Docker / Cloud)
 const handleShutdown = (signal: string) => {
   console.log(`Recibida señal ${signal}. Cerrando servidor Express limpiamente...`);
   if (server) {

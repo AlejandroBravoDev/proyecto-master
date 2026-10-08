@@ -10,7 +10,7 @@ import { PrismaClient } from '@prisma/client';
 import { PrismaBetterSqlite3 } from '@prisma/adapter-better-sqlite3';
 import path from 'path';
 
-// 1. Obtener la ruta de la base de datos de manera dinámica (entorno Electron o desarrollo local)
+// 1. Obtener la ruta de la base de datos de manera dinámica (producción en Railway/VPS o desarrollo local)
 const getDatabasePath = (): string => {
   if (process.env.SQLITE_DB_PATH) {
     return path.resolve(process.env.SQLITE_DB_PATH);

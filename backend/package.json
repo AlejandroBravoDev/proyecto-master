@@ -5,7 +5,10 @@
   "scripts": {
     "dev": "nodemon --watch src -e ts,json --exec ts-node src/server.ts",
     "build": "tsc",
+    "build:frontend": "npm --prefix ../frontend run build",
+    "build:all": "npm run db:generate && npm run build:frontend && npm run build",
     "start": "node dist/server.js",
+    "db:generate": "prisma generate",
     "db:push": "prisma db push",
     "db:seed": "prisma db seed",
     "db:studio": "prisma studio"
