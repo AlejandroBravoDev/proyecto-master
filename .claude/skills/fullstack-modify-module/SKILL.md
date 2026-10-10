@@ -36,7 +36,7 @@ Service -> controller -> ruta (**estáticas antes de `/:id`**) -> documentar (`b
 `schema.prisma` + `db:generate` (sin DDL: se guarda como TEXT) -> uniones de tipos escritas a mano en services -> validaciones de allow-list en controllers -> frontend: mapas de etiquetas/badges (`REASON_LABELS`, `PRODUCT_TYPES`, estados de caja...), selects y filtros. Busca el nombre de otro valor del mismo enum para encontrar todos los sitios.
 
 ### F. Agregar un KPI al dashboard
-`dashboard.service.ts#getKpis` (calcula con datos reales, redondeo `toFixed(2)`) -> respuesta de `GET /api/dashboard/kpis` -> `dashboardService.js` (nuevo objeto en `cards`) -> `MetricCard` (icono/formato si es un tipo nuevo). No muestres cifras que no calcule el backend. Ojo: `dashboard/services/endpoints.js` tiene un bug de URL conocido (`known-issues.md` B3); si lo tocas, usa `getApiBaseUrl()`.
+`dashboard.service.ts#getKpis` (calcula con datos reales, redondeo `toFixed(2)`) -> respuesta de `GET /api/dashboard/kpis` -> `dashboardService.js` (nuevo objeto en `cards`) -> `MetricCard` (icono/formato si es un tipo nuevo). No muestres cifras que no calcule el backend.
 
 ### G. Cambiar una regla de negocio
 Localiza **el único service** donde vive (ver `fullstack-domain-reference`), cambia ahí; ajusta el mapeo de errores del controller y el texto que ve el usuario (incluidos los `confirmDialog` que describían la regla vieja); evalúa datos existentes (¿hace falta migración o backfill?); actualiza la referencia de dominio.

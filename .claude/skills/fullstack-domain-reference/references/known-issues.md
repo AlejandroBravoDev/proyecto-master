@@ -22,10 +22,6 @@ Auditoría del 2026-10-09. Cada punto fue comprobado leyendo el código y, cuand
 
 | # | Problema | Dónde | Cómo actuar |
 |---|---|---|---|
-| B1 | **Importación Excel**: `worksheet.eachRow(async ...)` no espera; la respuesta se envía con `created/updated = 0` y errores vacíos mientras las filas se procesan después **[probado]** | `ingredient.service.ts#importIngredientsFromExcel` | Usar el patrón correcto de `backend-excel-import-export` (recolectar filas y `for...of` con `await`) |
-| B2 | La importación actualiza `currentStock` de insumos existentes **sin** movimiento de Kardex; la UI promete `.xls/.csv` y 10 MB, pero el backend solo lee `.xlsx` y multer no limita tamaño | `ingredient.service.ts`, `BulkImportModal.jsx`, `ingredient.routes.ts` | Corregir juntos si se toca la importación |
-| B3 | `frontend/src/app/dashboard/services/endpoints.js` lee `import.meta.env.VITE_API_URL` directo: en un build de producción sin esa variable la URL queda `undefined/api/dashboard/kpis` | frontend dashboard | Usar `getApiBaseUrl()` como todas las demás features |
-| B4 | `frontend/.env.example` define `VITE_API_URL=.../api`, pero los endpoints ya agregan `/api` -> `/api/api/...` | `.env.example` | `VITE_API_URL` es solo el host (sin `/api`) |
 | B5 | Borrar una categoría con productos -> **500** (FK restrict) **[probado]**; el texto de `CategoryModal` dice que los productos "quedarán sin categoría" | `category.service.ts`, `CategoryModal.jsx` | Devolver 400 con mensaje claro o reasignar; no prometer lo contrario en la UI |
 | B6 | Borrar un producto elimina sus `order_details` y `sale_details` (se pierde historial y los totales dejan de cuadrar) | `product.service.ts#deleteProduct` | Preferir baja lógica (`available = false`) en entidades con historial |
 | B7 | Cancelar/eliminar una comanda **no devuelve stock**; vender no valida stock (puede quedar negativo); los productos `DIRECT_INVENTORY` no descuentan nada | `order.service.ts` | Documentarlo; en flujos nuevos usar movimientos compensatorios |
