@@ -13,6 +13,10 @@ import {
 } from 'lucide-react';
 import { importIngredientsExcel } from '../services/inventoryService';
 
+// Mismo límite que el backend (multer en ingredient.routes.ts); el backend solo lee .xlsx
+const MAX_FILE_SIZE_MB = 10;
+const MAX_FILE_SIZE_BYTES = MAX_FILE_SIZE_MB * 1024 * 1024;
+
 export default function BulkImportModal({
   isOpen,
   onClose,
@@ -56,12 +60,16 @@ export default function BulkImportModal({
 
   const validateAndSetFile = (selectedFile) => {
     setError('');
-    const validExtensions = ['.xlsx', '.xls', '.csv'];
-    const fileName = selectedFile.name.toLowerCase();
-    const isValid = validExtensions.some((ext) => fileName.endsWith(ext));
 
-    if (!isValid) {
-      setError('Por favor selecciona un archivo válido de Excel (.xlsx, .xls) o CSV.');
+    if (!selectedFile.name.toLowerCase().endsWith('.xlsx')) {
+      setError('Solo se admiten archivos de Excel con extensión .xlsx (no se aceptan .xls ni .csv).');
+      return;
+    }
+
+    if (selectedFile.size > MAX_FILE_SIZE_BYTES) {
+      // Se redondea hacia arriba para no mostrar "10.0 MB" en un archivo que supera los 10 MB
+      const sizeInMb = Math.ceil((selectedFile.size / (1024 * 1024)) * 10) / 10;
+      setError(`El archivo pesa ${sizeInMb.toFixed(1)} MB y supera el máximo permitido de ${MAX_FILE_SIZE_MB} MB.`);
       return;
     }
 
@@ -216,7 +224,7 @@ export default function BulkImportModal({
               <input
                 ref={fileInputRef}
                 type="file"
-                accept=".xlsx, .xls, .csv"
+                accept=".xlsx"
                 onChange={handleFileChange}
                 className="hidden"
               />
@@ -241,7 +249,7 @@ export default function BulkImportModal({
                       Arrastra tu archivo Excel aquí o <span className="text-[#E63946] underline">haz clic para examinar</span>
                     </p>
                     <p className="text-xs text-slate-400 mt-1">
-                      Formatos soportados: .xlsx, .xls, .csv (Máximo 10MB)
+                      Formato soportado: .xlsx (Máximo {MAX_FILE_SIZE_MB} MB)
                     </p>
                   </div>
                 </div>
