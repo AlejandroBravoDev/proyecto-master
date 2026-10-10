@@ -306,7 +306,10 @@ export class IngredientService {
   /**
    * Importa de forma masiva insumos desde un archivo de Excel (Buffer).
    * Si un insumo ya existe por su nombre, actualiza sus campos; si no existe, lo crea.
-   * Las filas se procesan una a una y el resumen se devuelve solo cuando todas terminaron.
+   * Las filas se procesan una a una (cada una en su transacción, junto con su movimiento de Kardex) y el
+   * resumen se devuelve solo cuando todas terminaron.
+   * En un insumo existente, "Stock Inicial" es el stock resultante: si difiere del actual se registra un
+   * movimiento IN/OUT (MANUAL_ADJUSTMENT) con la diferencia.
    * Una celda numérica vacía cuenta como "no informada": en un insumo existente conserva su valor actual.
    * @param buffer Buffer binario del archivo .xlsx subido
    */
@@ -385,26 +388,50 @@ export class IngredientService {
       }
 
       try {
-        const existing = await prisma.ingredient.findUnique({
-          where: { name: r.name }
-        });
-
-        if (existing) {
-          // Si existe, actualizar sus datos
-          await prisma.ingredient.update({
-            where: { id: existing.id },
-            data: {
-              description: r.description || existing.description,
-              measurementUnit: r.measurementUnit,
-              currentStock: stock.value ?? existing.currentStock,
-              minimumStock: minimum.value ?? existing.minimumStock,
-              unitCost: cost.value ?? existing.unitCost
-            }
+        // Cada fila es atómica: el insumo y su movimiento de Kardex se guardan juntos o no se guarda nada
+        const outcome = await prisma.$transaction(async (tx) => {
+          const existing = await tx.ingredient.findUnique({
+            where: { name: r.name }
           });
-          results.updated++;
-        } else {
+
+          if (existing) {
+            // Si existe, actualizar sus datos. El stock anterior es el leído dentro de la transacción;
+            // la diferencia se redondea para ignorar el ruido de coma flotante (p. ej. 9.549999999999999 vs 9.55).
+            const requestedStock = stock.value ?? existing.currentStock;
+            const delta = Number((requestedStock - existing.currentStock).toFixed(6));
+            const newStock = delta !== 0 ? requestedStock : existing.currentStock;
+
+            await tx.ingredient.update({
+              where: { id: existing.id },
+              data: {
+                description: r.description || existing.description,
+                measurementUnit: r.measurementUnit,
+                currentStock: newStock,
+                minimumStock: minimum.value ?? existing.minimumStock,
+                unitCost: cost.value ?? existing.unitCost
+              }
+            });
+
+            // Todo cambio de stock deja su movimiento en el Kardex (ajuste por inventario del archivo)
+            if (delta !== 0) {
+              await tx.inventoryMovement.create({
+                data: {
+                  ingredientId: existing.id,
+                  type: delta > 0 ? 'IN' : 'OUT',
+                  reason: 'MANUAL_ADJUSTMENT',
+                  quantity: Math.abs(delta),
+                  previousStock: existing.currentStock,
+                  newStock,
+                  reference: 'Bulk Excel Import'
+                }
+              });
+            }
+
+            return 'updated' as const;
+          }
+
           // Si no existe, crearlo y registrar Kardex inicial si stock > 0
-          const newIngredient = await prisma.ingredient.create({
+          const newIngredient = await tx.ingredient.create({
             data: {
               name: r.name,
               description: r.description || undefined,
@@ -416,7 +443,7 @@ export class IngredientService {
           });
 
           if (newIngredient.currentStock > 0) {
-            await prisma.inventoryMovement.create({
+            await tx.inventoryMovement.create({
               data: {
                 ingredientId: newIngredient.id,
                 type: 'IN',
@@ -429,8 +456,10 @@ export class IngredientService {
             });
           }
 
-          results.created++;
-        }
+          return 'created' as const;
+        });
+
+        results[outcome]++;
       } catch (err: any) {
         console.error(`[Importación Excel] Fila ${r.rowNumber} (${r.name}):`, err);
         const reason = err?.code === 'P2002' ? 'registro duplicado' : 'error al procesar la fila';
