@@ -7,7 +7,7 @@
  */
 
 import { Request, Response } from 'express';
-import { ingredientService } from '../services/ingredient.service';
+import { ingredientService, MAX_IMPORT_ROWS } from '../services/ingredient.service';
 
 export class IngredientController {
   /**
@@ -74,24 +74,36 @@ export class IngredientController {
 
   /**
    * POST /api/ingredients/import/ingredients
-   * Carga masiva de insumos desde un archivo Excel subido mediante multipart/form-data.
+   * Carga masiva de insumos desde un archivo .xlsx (máx. 10 MB) subido mediante multipart/form-data.
    */
   async importExcel(req: Request, res: Response) {
     try {
       if (!req.file || !req.file.buffer) {
         return res.status(400).json({ error: 'Se requiere adjuntar un archivo de Excel (campo file)' });
       }
+      if (!req.file.originalname.toLowerCase().endsWith('.xlsx')) {
+        return res.status(400).json({ error: 'Solo se admiten archivos Excel con extensión .xlsx' });
+      }
 
-      const result = await ingredientService.importIngredientsFromExcel(req.file.buffer as any);
+      const result = await ingredientService.importIngredientsFromExcel(req.file.buffer);
       return res.status(200).json({
         message: 'Proceso de carga masiva finalizado',
         summary: result
       });
     } catch (error: any) {
+      if (error.message === 'INVALID_XLSX_FILE') {
+        return res.status(400).json({ error: 'El archivo no es un .xlsx válido' });
+      }
       if (error.message === 'NO_WORKSHEET_FOUND') {
         return res.status(400).json({ error: 'El archivo Excel subido no contiene hojas válidas' });
       }
-      return res.status(500).json({ error: 'Error al procesar la carga masiva de insumos', details: error.message || error });
+      if (error.message === 'INVALID_TEMPLATE') {
+        return res.status(400).json({ error: 'El archivo no coincide con la plantilla. Descarga la plantilla oficial y vuelve a intentarlo' });
+      }
+      if (error.message === 'TOO_MANY_ROWS') {
+        return res.status(400).json({ error: `El archivo supera el máximo de ${MAX_IMPORT_ROWS} filas por carga` });
+      }
+      return res.status(500).json({ error: 'Error al procesar la carga masiva de insumos', details: error.message });
     }
   }
 
