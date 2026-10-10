@@ -10,6 +10,37 @@
 import prisma from '../prisma/client';
 import ExcelJS from 'exceljs';
 
+/** Máximo de filas de datos que se procesan en una sola carga masiva. */
+export const MAX_IMPORT_ROWS = 5000;
+
+/** Encabezados de la plantilla de carga, en el orden fijo de sus columnas (ya normalizados). */
+const IMPORT_HEADERS = ['nombre del insumo', 'descripcion', 'unidad de medida', 'stock inicial', 'stock minimo', 'costo unitario'];
+
+/** Texto de una celda ya recortado (cell.text resuelve fórmulas, texto enriquecido y números). */
+const cellText = (cell: ExcelJS.Cell): string => String(cell.text ?? '').trim();
+
+/** Normaliza un encabezado: minúsculas, sin tildes, sin marcas "(*)" / "($)" y sin espacios sobrantes. */
+const normalizeHeader = (value: string): string =>
+  value
+    .normalize('NFD')
+    .replace(/\p{M}/gu, '')
+    .replace(/\(\s*[*$]\s*\)/g, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .toLowerCase();
+
+/**
+ * Interpreta una celda numérica de la plantilla: vacía = no informada (undefined);
+ * texto no numérico o negativo = motivo de error para esa fila.
+ */
+const parseNonNegative = (text: string, label: string): { value?: number; error?: string } => {
+  if (text === '') return {};
+  const value = Number(text);
+  if (!Number.isFinite(value)) return { error: `${label} no es un número válido` };
+  if (value < 0) return { error: `${label} no puede ser negativo` };
+  return { value };
+};
+
 export class IngredientService {
   /**
    * Obtiene todos los insumos ordenados alfabéticamente con filtro opcional por nombre o descripción.
@@ -275,17 +306,64 @@ export class IngredientService {
   /**
    * Importa de forma masiva insumos desde un archivo de Excel (Buffer).
    * Si un insumo ya existe por su nombre, actualiza sus campos; si no existe, lo crea.
-   * @param buffer Buffer binario del archivo Excel subido
+   * Las filas se procesan una a una (cada una en su transacción, junto con su movimiento de Kardex) y el
+   * resumen se devuelve solo cuando todas terminaron.
+   * En un insumo existente, "Stock Inicial" es el stock resultante: si difiere del actual se registra un
+   * movimiento IN/OUT (MANUAL_ADJUSTMENT) con la diferencia.
+   * Una celda numérica vacía cuenta como "no informada": en un insumo existente conserva su valor actual.
+   * @param buffer Buffer binario del archivo .xlsx subido
    */
-  async importIngredientsFromExcel(buffer: any) {
+  async importIngredientsFromExcel(buffer: Buffer) {
     const workbook = new ExcelJS.Workbook();
-    await workbook.xlsx.load(buffer);
+    try {
+      await workbook.xlsx.load(buffer as any); // exceljs tipa Buffer con una definición antigua
+    } catch {
+      throw new Error('INVALID_XLSX_FILE');
+    }
 
     const worksheet = workbook.getWorksheet(1);
     if (!worksheet) {
       throw new Error('NO_WORKSHEET_FOUND');
     }
 
+    // Rechazar archivos que no son la plantilla: las columnas se leen por posición
+    const headerRow = worksheet.getRow(1);
+    const isTemplate = IMPORT_HEADERS.every(
+      (expected, index) => normalizeHeader(cellText(headerRow.getCell(index + 1))) === expected
+    );
+    if (!isTemplate) {
+      throw new Error('INVALID_TEMPLATE');
+    }
+
+    // 1) Recolectar las filas. eachRow es SÍNCRONO: nunca uses async/await dentro de su callback.
+    const rows: Array<{
+      rowNumber: number;
+      name: string;
+      description: string;
+      measurementUnit: string;
+      currentStock: string;
+      minimumStock: string;
+      unitCost: string;
+    }> = [];
+
+    worksheet.eachRow((row, rowNumber) => {
+      if (rowNumber === 1) return; // encabezado
+      rows.push({
+        rowNumber,
+        name: cellText(row.getCell(1)),
+        description: cellText(row.getCell(2)),
+        measurementUnit: cellText(row.getCell(3)),
+        currentStock: cellText(row.getCell(4)),
+        minimumStock: cellText(row.getCell(5)),
+        unitCost: cellText(row.getCell(6))
+      });
+    });
+
+    if (rows.length > MAX_IMPORT_ROWS) {
+      throw new Error('TOO_MANY_ROWS');
+    }
+
+    // 2) Procesar en secuencia esperando cada fila: un error en una fila no aborta el lote
     const results = {
       created: 0,
       updated: 0,
@@ -293,64 +371,79 @@ export class IngredientService {
       errors: [] as string[]
     };
 
-    // Iterar filas omitiendo el encabezado (fila 1)
-    worksheet.eachRow(async (row, rowNumber) => {
-      if (rowNumber === 1) return;
-
-      const rawName = row.getCell(1).text || row.getCell(1).value;
-      const rawDescription = row.getCell(2).text || row.getCell(2).value;
-      const rawMeasurementUnit = row.getCell(3).text || row.getCell(3).value;
-      const rawCurrentStock = row.getCell(4).value;
-      const rawMinimumStock = row.getCell(5).value;
-      const rawUnitCost = row.getCell(6).value;
-
-      const name = rawName ? String(rawName).trim() : '';
-      const description = rawDescription ? String(rawDescription).trim() : undefined;
-      const measurementUnit = rawMeasurementUnit ? String(rawMeasurementUnit).trim() : '';
-
-      // Omitir filas vacías o de ejemplo si no traen nombre ni unidad de medida
-      if (!name || !measurementUnit) {
+    for (const r of rows) {
+      // Omitir filas sin los campos obligatorios (nombre y unidad de medida)
+      if (!r.name || !r.measurementUnit) {
         results.skipped++;
-        return;
+        continue;
       }
 
-      const currentStock = typeof rawCurrentStock === 'number' ? rawCurrentStock : parseFloat(String(rawCurrentStock || 0));
-      const minimumStock = typeof rawMinimumStock === 'number' ? rawMinimumStock : parseFloat(String(rawMinimumStock || 0));
-      const unitCost = typeof rawUnitCost === 'number' ? rawUnitCost : parseFloat(String(rawUnitCost || 0));
+      const stock = parseNonNegative(r.currentStock, 'Stock Inicial');
+      const minimum = parseNonNegative(r.minimumStock, 'Stock Mínimo');
+      const cost = parseNonNegative(r.unitCost, 'Costo Unitario');
+      const invalidReason = stock.error ?? minimum.error ?? cost.error;
+      if (invalidReason) {
+        results.errors.push(`Fila ${r.rowNumber} (${r.name}): ${invalidReason}`);
+        continue;
+      }
 
       try {
-        const existing = await prisma.ingredient.findUnique({
-          where: { name }
-        });
-
-        if (existing) {
-          // Si existe, actualizar sus datos
-          await prisma.ingredient.update({
-            where: { id: existing.id },
-            data: {
-              description: description ?? existing.description,
-              measurementUnit,
-              currentStock: isNaN(currentStock) ? existing.currentStock : currentStock,
-              minimumStock: isNaN(minimumStock) ? existing.minimumStock : minimumStock,
-              unitCost: isNaN(unitCost) ? existing.unitCost : unitCost
-            }
+        // Cada fila es atómica: el insumo y su movimiento de Kardex se guardan juntos o no se guarda nada
+        const outcome = await prisma.$transaction(async (tx) => {
+          const existing = await tx.ingredient.findUnique({
+            where: { name: r.name }
           });
-          results.updated++;
-        } else {
+
+          if (existing) {
+            // Si existe, actualizar sus datos. El stock anterior es el leído dentro de la transacción;
+            // la diferencia se redondea para ignorar el ruido de coma flotante (p. ej. 9.549999999999999 vs 9.55).
+            const requestedStock = stock.value ?? existing.currentStock;
+            const delta = Number((requestedStock - existing.currentStock).toFixed(6));
+            const newStock = delta !== 0 ? requestedStock : existing.currentStock;
+
+            await tx.ingredient.update({
+              where: { id: existing.id },
+              data: {
+                description: r.description || existing.description,
+                measurementUnit: r.measurementUnit,
+                currentStock: newStock,
+                minimumStock: minimum.value ?? existing.minimumStock,
+                unitCost: cost.value ?? existing.unitCost
+              }
+            });
+
+            // Todo cambio de stock deja su movimiento en el Kardex (ajuste por inventario del archivo)
+            if (delta !== 0) {
+              await tx.inventoryMovement.create({
+                data: {
+                  ingredientId: existing.id,
+                  type: delta > 0 ? 'IN' : 'OUT',
+                  reason: 'MANUAL_ADJUSTMENT',
+                  quantity: Math.abs(delta),
+                  previousStock: existing.currentStock,
+                  newStock,
+                  reference: 'Bulk Excel Import'
+                }
+              });
+            }
+
+            return 'updated' as const;
+          }
+
           // Si no existe, crearlo y registrar Kardex inicial si stock > 0
-          const newIngredient = await prisma.ingredient.create({
+          const newIngredient = await tx.ingredient.create({
             data: {
-              name,
-              description,
-              measurementUnit,
-              currentStock: isNaN(currentStock) ? 0 : currentStock,
-              minimumStock: isNaN(minimumStock) ? 0 : minimumStock,
-              unitCost: isNaN(unitCost) ? 0 : unitCost
+              name: r.name,
+              description: r.description || undefined,
+              measurementUnit: r.measurementUnit,
+              currentStock: stock.value ?? 0,
+              minimumStock: minimum.value ?? 0,
+              unitCost: cost.value ?? 0
             }
           });
 
           if (newIngredient.currentStock > 0) {
-            await prisma.inventoryMovement.create({
+            await tx.inventoryMovement.create({
               data: {
                 ingredientId: newIngredient.id,
                 type: 'IN',
@@ -363,12 +456,16 @@ export class IngredientService {
             });
           }
 
-          results.created++;
-        }
+          return 'created' as const;
+        });
+
+        results[outcome]++;
       } catch (err: any) {
-        results.errors.push(`Fila ${rowNumber} (${name}): ${err.message || 'Error al procesar'}`);
+        console.error(`[Importación Excel] Fila ${r.rowNumber} (${r.name}):`, err);
+        const reason = err?.code === 'P2002' ? 'registro duplicado' : 'error al procesar la fila';
+        results.errors.push(`Fila ${r.rowNumber} (${r.name}): ${reason}`);
       }
-    });
+    }
 
     return results;
   }

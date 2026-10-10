@@ -1,11 +1,11 @@
 ---
 name: backend-excel-import-export
-description: Descarga de plantillas y reportes Excel y carga masiva .xlsx en el backend (exceljs + multer) - rutas /template, /export, /import, controller con headers de descarga, service con iteración async correcta y resumen created/updated/skipped/errors. Úsala al agregar importar/exportar Excel, plantilla, reporte o carga masiva a cualquier módulo. Incluye el bug conocido de eachRow(async).
+description: Descarga de plantillas y reportes Excel y carga masiva .xlsx en el backend (exceljs + multer) - rutas /template, /export, /import, controller con headers de descarga, service con iteración async correcta y resumen created/updated/skipped/errors. Úsala al agregar importar/exportar Excel, plantilla, reporte o carga masiva a cualquier módulo. Incluye la trampa conocida de eachRow(async).
 ---
 
 # Backend: plantilla, reporte e importación de Excel
 
-Hay una implementación de referencia en `ingredient.routes.ts` / `ingredient.controller.ts` / `ingredient.service.ts`. **Copia su estructura pero no su bucle de importación**: usa `worksheet.eachRow(async ...)`, que no espera a las promesas, así que la respuesta se envía con `created: 0, updated: 0` y los errores vacíos mientras las filas se procesan después (reproducido). El patrón correcto está abajo y en `references/templates.md`.
+Hay una implementación de referencia en `ingredient.routes.ts` / `ingredient.controller.ts` / `ingredient.service.ts`: recolecta las filas con `eachRow` y las procesa con `for...of` + `await`, cada una en su transacción con su movimiento de Kardex. **Nunca pongas `async` en el callback de `worksheet.eachRow(async ...)`**: no espera a las promesas, así que la respuesta se envía con `created: 0, updated: 0` y los errores vacíos mientras las filas se procesan después (es el error que tenía esa implementación, ya corregido). El patrón correcto está abajo y en `references/templates.md`.
 
 ## Contrato (frontend y backend deben coincidir)
 
@@ -28,7 +28,7 @@ Las tres rutas estáticas se registran **antes** de `/:id`. Mensajes y nombres d
    - Valida los encabezados de la fila 1 para rechazar archivos que no son la plantilla (`INVALID_TEMPLATE`), y limita el número de filas (p. ej. 5000, `TOO_MANY_ROWS`).
    - Cada fila en su propio `try/catch`: un error no aborta el lote; agrega `Fila N (nombre): motivo corto` a `errors` (mapea `P2002` a "duplicado"; no vuelques mensajes largos de Prisma).
    - Clave de upsert = campo único del dominio (p. ej. `name`). Filas sin los campos obligatorios -> `skipped`.
-   - Si la entidad tiene stock, cada fila que cree/cambie stock debe ir en su `prisma.$transaction` junto con su movimiento de Kardex (skill `backend-transactions-kardex`). La implementación de insumos hoy actualiza `currentStock` de existentes **sin** movimiento: no lo repliques.
+   - Si la entidad tiene stock, cada fila que cree/cambie stock debe ir en su `prisma.$transaction` junto con su movimiento de Kardex (skill `backend-transactions-kardex`). La importación de insumos ya lo hace (`ingredient.service.ts#importIngredientsFromExcel`): úsala de modelo.
    - Si necesitas "todo o nada", envuelve el lote en una sola transacción con `{ timeout: 30000 }` y reporta el primer error; decídelo con el usuario.
 5. **Frontend**: skill `frontend-excel-import-export` (descarga con blob, modal de arrastrar y soltar, resumen).
 

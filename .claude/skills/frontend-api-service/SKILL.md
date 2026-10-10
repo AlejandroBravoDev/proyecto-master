@@ -19,7 +19,7 @@ Cada feature habla con el backend solo a través de dos archivos: `services/endp
   };
   ```
   Los getters/funciones se evalúan al llamar (no al importar), igual que el resto de features.
-- **Nunca** leas `import.meta.env.VITE_API_URL` directo (el dashboard lo hace y queda `undefined/api/...` en producción). `getApiBaseUrl()` resuelve: `VITE_API_URL` -> `''` en producción (misma origin) -> `http://localhost:3001` en desarrollo.
+- **Nunca** leas `import.meta.env.VITE_API_URL` directo (en un build sin esa variable la URL queda `undefined/api/...`). `getApiBaseUrl()` resuelve: `VITE_API_URL` -> `''` en producción (misma origin) -> `http://localhost:3001` en desarrollo.
 - `VITE_API_URL` es **solo el host** (`https://midominio.com`), sin `/api`. Con `/api` al final las URLs quedan `/api/api/...`. En desarrollo normalmente no hace falta `.env`.
 - Una feature que necesita datos de otra declara esa URL en **su propio** `endpoints.js` (como `ORDER_ENDPOINTS.PRODUCTS` o `CAJA_ENDPOINTS.USERS`) y la consume desde **su** service; no importes el service de otra feature.
 - Nombre del objeto: `<FEATURE>_ENDPOINTS` en MAYÚSCULAS.

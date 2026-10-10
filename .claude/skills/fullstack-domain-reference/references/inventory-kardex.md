@@ -32,6 +32,7 @@ Todo cambio de `Ingredient.currentStock` debe crear un `InventoryMovement` con `
 | Ajuste manual negativo / merma | `OUT` | `WASTE` o `MANUAL_ADJUSTMENT` | `Manual Adjustment` |
 | Venta de producto con receta | `OUT` | `SALE` | `Order #ORD-0001` |
 | Importación masiva (insumo nuevo con stock) | `IN` | `PURCHASE` | `Bulk Excel Import` |
+| Importación masiva (insumo existente con otro stock) | `IN` / `OUT` según el signo de la diferencia | `MANUAL_ADJUSTMENT` | `Bulk Excel Import` |
 
 `ADJUSTMENT` existe en el enum pero el backend actual nunca lo emite (usa `IN`/`OUT` según el signo).
 
@@ -53,7 +54,7 @@ Regla única: `active && currentStock <= minimumStock` (en `InventoryService.get
 
 ## Excel (plantilla, reporte, importación)
 
-Columnas de la plantilla/importación (orden fijo): Nombre (*), Descripción, Unidad de Medida (*), Stock Inicial, Stock Mínimo, Costo Unitario. Importación: upsert por **nombre**; existente -> actualiza campos (**incluido `currentStock` sin crear movimiento**); nuevo -> crea y, si hay stock, movimiento `Bulk Excel Import`. Detalles y bug conocido de la implementación actual: skill `backend-excel-import-export` y `known-issues.md`.
+Columnas de la plantilla/importación (orden fijo; se validan los encabezados): Nombre (*), Descripción, Unidad de Medida (*), Stock Inicial, Stock Mínimo, Costo Unitario. La importación (`importIngredientsFromExcel`) procesa las filas en secuencia, cada una en su `$transaction`: upsert por **nombre**; existente -> actualiza campos y, si `Stock Inicial` difiere del stock actual (el archivo fija el stock **resultante**, no suma), crea un movimiento `IN`/`OUT` `MANUAL_ADJUSTMENT` con la diferencia; nuevo -> crea y, si hay stock, movimiento `IN`/`PURCHASE` `Bulk Excel Import`. Una celda numérica vacía = no informada (en un insumo existente conserva su valor); un valor no numérico o negativo manda la fila a `errors`; una fila sin nombre o sin unidad cuenta como `skipped`. Contrato, límites (`.xlsx`, 10 MB, 5000 filas) y respuestas 400: `api-endpoints.md`; patrón general: skill `backend-excel-import-export`.
 
 ## Frontend
 

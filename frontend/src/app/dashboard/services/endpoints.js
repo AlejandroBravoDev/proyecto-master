@@ -3,8 +3,8 @@
  * Dynamically constructs full URLs combining VITE_API_URL from .env + endpoint path.
  */
 
-const API_BASE_URL = import.meta.env.VITE_API_URL;
+import { getApiBaseUrl } from '../../../config/api';
 
 export const DASHBOARD_ENDPOINTS = {
-  KPIS: `${API_BASE_URL}/api/dashboard/kpis`,
+  get KPIS() { return `${getApiBaseUrl()}/api/dashboard/kpis`; },
 };

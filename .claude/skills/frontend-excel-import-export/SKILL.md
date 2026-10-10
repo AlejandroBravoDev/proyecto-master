@@ -77,7 +77,7 @@ export async function importSuppliersExcel(file) {
 Comportamiento a conservar al copiarlo:
 
 1. **Zona de arrastrar y soltar**: `onDragOver` (preventDefault + `isDragging`), `onDragLeave`, `onDrop` (primer archivo de `e.dataTransfer.files`), clic que dispara un `<input type="file" accept=".xlsx" className="hidden">` por `ref`.
-2. **Validación en el cliente**: extensión permitida y tamaño máximo. El modal actual dice `.xlsx, .xls, .csv` y "10 MB" pero el backend solo lee `.xlsx` y (hasta que se corrija) no limita tamaño: al copiar, deja **`.xlsx` únicamente** y comprueba `file.size <= 10 * 1024 * 1024` con un mensaje claro; si algún día el backend soporta CSV, cambia ambos lados juntos.
+2. **Validación en el cliente**: extensión permitida (**`.xlsx` únicamente**: el backend no lee `.xls` ni `.csv`) y tamaño máximo (`file.size <= 10 * 1024 * 1024`, el mismo límite que multer en el backend) con un mensaje claro antes de subir. `BulkImportModal.jsx` ya lo hace; si algún día el backend soporta CSV o cambia el límite, cambia ambos lados juntos.
 3. **Vista previa del archivo**: nombre, tamaño legible (`formatFileSize`) y botón para quitarlo antes de subir.
 4. **Subida protegida**: `uploading` + `isUploadingRef` contra doble clic; botón con spinner y texto "Subiendo y procesando...".
 5. **Resumen**: al llegar `{ message, summary }`, tarjetas con **Creados / Actualizados / Omitidos** (`summary.created ?? 0`, etc.) y, si `summary.errors.length > 0`, una lista (`max-h-32 overflow-y-auto`) con las filas con error. Botones "Importar otro archivo" y "Listo / Cerrar".

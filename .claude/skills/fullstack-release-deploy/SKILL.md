@@ -32,8 +32,6 @@ cd backend && npm run build:all      # = prisma generate -> compila frontend -> 
 Resultado: `frontend/dist` (SPA) y `backend/dist` (servidor). Arranque: `cd backend && npm start` (`node dist/server.js`).
 
 > **Trampa nº 1: Vite incrusta `VITE_API_URL` en el bundle al compilar.** Tu `frontend/.env` local define `VITE_API_URL=http://localhost:3001`; si compilas en tu máquina y subes ese `dist`, todos los navegadores intentarán llamar a *su propio* `localhost:3001` (comprobado en el `dist` local actual). Para producción en el mismo dominio la variable debe estar **ausente o vacía** al compilar: compila en la plataforma (donde no existe tu `.env`), o renombra `frontend/.env` temporalmente. Con `VITE_API_URL` vacío, `getApiBaseUrl()` usa URLs relativas (`/api/...`), sin CORS ni contenido mixto. Nunca la termines en `/api`.
->
-> **Trampa nº 2: el dashboard.** `frontend/src/app/dashboard/services/endpoints.js` lee `VITE_API_URL` directo, así que en un build sin la variable pide `undefined/api/dashboard/kpis` (`known-issues.md` B3). Hasta que se corrija, verifica el Dashboard tras desplegar.
 
 ## 4. Probar en modo producción local (obligatorio antes de subir)
 

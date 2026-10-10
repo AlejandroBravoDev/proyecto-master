@@ -67,7 +67,7 @@ Orden de rutas importante: las estáticas (`/template/...`, `/export/...`, `/imp
 | `GET /` | `search?` (nombre o descripción) | array, orden por nombre |
 | `GET /template/ingredients` | - | `.xlsx` `plantilla_carga_ingredientes.xlsx` |
 | `GET /export/ingredients` | - | `.xlsx` `reporte_inventario_ingredientes.xlsx` |
-| `POST /import/ingredients` | multipart `file` | 200 `{ message, summary: { created, updated, skipped, errors: string[] } }` · 400 sin archivo / sin hojas |
+| `POST /import/ingredients` | multipart `file`: solo `.xlsx` (máx. 10 MB y 5000 filas, columnas de la plantilla oficial) | 200 `{ message, summary: { created, updated, skipped, errors: string[] } }` con el resumen **final** (se procesan todas las filas antes de responder; una fila con error va a `errors` y no aborta el lote; reglas en `inventory-kardex.md`) · 400 `{ error }`: sin archivo, no es `.xlsx`, > 10 MB, archivo inválido, sin hojas, plantilla distinta, > 5000 filas |
 | `GET /:id` | - | insumo + `inventoryMovements` (últimos 20) · 404 |
 | `POST /` | `{ name, measurementUnit, description?, currentStock?, minimumStock?, unitCost? }` | 201 (si `currentStock > 0` crea movimiento `IN/PURCHASE` "Initial Stock") · 400 faltan/duplicado |
 | `PUT /:id` | `{ name?, description?, measurementUnit?, minimumStock?, unitCost?, active?, adjustStock?, adjustReason? }` | insumo · 404 · 400 `STOCK_CANNOT_BE_NEGATIVE`. `adjustStock` es un **delta con signo**; `currentStock` no se edita directo |
