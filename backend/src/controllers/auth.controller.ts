@@ -7,6 +7,7 @@
 
 import { Request, Response } from 'express';
 import { authService } from '../services/auth.service';
+import { errorDetails } from '../utils/http.utils';
 
 export class AuthController {
   /**
@@ -15,9 +16,9 @@ export class AuthController {
    */
   async login(req: Request, res: Response) {
     try {
-      const { username, password } = req.body;
+      const { username, password } = req.body ?? {};
 
-      if (!username || !password) {
+      if (!username || !password || typeof username !== 'string' || typeof password !== 'string') {
         return res.status(400).json({ error: 'Usuario y contraseña son requeridos.' });
       }
 
@@ -33,7 +34,7 @@ export class AuthController {
       if (error.message === 'USER_INACTIVE') {
         return res.status(403).json({ error: 'Esta cuenta de trabajador está inactiva. Contacte al administrador.' });
       }
-      return res.status(500).json({ error: 'Error interno en autenticación', details: error.message || error });
+      return res.status(500).json({ error: 'Error interno en autenticación', details: errorDetails(error) });
     }
   }
 }

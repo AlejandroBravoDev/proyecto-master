@@ -5,12 +5,13 @@
  * Gestiona el inicio de sesión local para trabajadores y administradores.
  */
 
-import prisma from '../prisma/client';
 import { verifyPassword } from '../utils/auth.utils';
+import { findUserByUsername } from '../utils/username.utils';
 
 export class AuthService {
   /**
    * Valida credenciales e inicia sesión.
+   * El nombre de usuario no distingue mayúsculas: "admin", "ADMIN" y "Admin" son el mismo usuario.
    * @param credentials Objeto con username y password
    */
   async login(credentials: { username: string; password: string }) {
@@ -20,16 +21,8 @@ export class AuthService {
       throw new Error('MISSING_CREDENTIALS');
     }
 
-    const trimmedUser = username.trim();
-
-    // Búsqueda del usuario por nombre de usuario (en SQLite Prisma findFirst con filtro insensible a mayúsculas o exacto)
-    const user = await prisma.user.findFirst({
-      where: {
-        username: {
-          equals: trimmedUser
-        }
-      }
-    });
+    // Búsqueda del usuario por nombre de usuario, sin distinguir mayúsculas
+    const user = await findUserByUsername(username);
 
     if (!user) {
       throw new Error('INVALID_CREDENTIALS');
