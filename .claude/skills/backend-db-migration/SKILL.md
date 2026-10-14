@@ -20,9 +20,9 @@ Si solo cambias `schema.prisma`, tu BD local puede seguir funcionando, pero cual
 
 1. **Edita `schema.prisma`** con las convenciones: campos `camelCase` + `@map("snake_case")`, tabla `@@map("plural_snake")`, `createdAt`/`updatedAt` en tablas nuevas, `@@index` para FKs y filtros frecuentes, enums de Prisma (se guardan como TEXT). Si añades una relación, agrega el campo inverso en el otro modelo (Prisma lo exige).
 2. **Traduce a SQL** con la tabla de equivalencias de abajo. Plantillas en `references/migration-templates.md`.
-3. **Añade una migración nueva** en `init.ts`, justo después del último bloque `00N_...` y antes de "Sembrar Administrador". Id = siguiente número + nombre (`003_suppliers`). Usa el patrón: comprobar `_migrations` -> `db.transaction` -> DDL idempotente -> insertar el id.
+3. **Añade una migración nueva** en `init.ts`, justo después del último bloque `00N_...` y antes de "Sembrar Administrador". Id = siguiente número + nombre (`003_suppliers`). Usa el patrón: comprobar `_migrations` -> `db.transaction` -> DDL idempotente -> insertar el id. **Y agrega el id a `MIGRATION_IDS`** (constante exportada al inicio de `init.ts`): con ella `initializeDatabase()` detecta que hay migraciones pendientes y hace la copia `pre-migration-<fecha>.db` **antes** de migrar una BD que ya tenía datos; si olvidas el id, esa BD migra sin copia previa.
 4. **Regenera tipos**: `cd backend && npm run db:generate`; reinicia el dev server.
-5. **Datos iniciales** (si aplica): filas imprescindibles de forma idempotente dentro de `init.ts`; datos de demo en `prisma/seed.ts` (agrega el `deleteMany()` del modelo nuevo **antes** de los modelos de los que depende, respetando FKs).
+5. **Datos iniciales** (si aplica): filas imprescindibles de forma idempotente dentro de `init.ts`; datos de demo en **las dos siembras, que son independientes y hoy difieren**: `init.ts#seedInitialData` (SQL crudo, solo en el primer arranque con `categories` vacía) y `prisma/seed.ts` (`npm run db:seed`, borra catálogo, ventas, comandas y movimientos; agrega el `deleteMany()` del modelo nuevo **antes** de los modelos de los que depende, respetando FKs). Si tu cambio afecta a los datos de ejemplo, actualiza ambas. El usuario `Admin` no se siembra aquí: lo crea el paso "Sembrar Administrador" (`ADMIN_INITIAL_PASSWORD`, ver `fullstack-release-deploy`).
 6. **Prueba la migración** (obligatorio) con el script, que usa copias y nunca toca tu BD:
    ```bash
    node .claude/skills/fullstack-verify-changes/scripts/db-check.mjs --table <tabla>
@@ -38,7 +38,7 @@ Si solo cambias `schema.prisma`, tu BD local puede seguir funcionando, pero cual
 - **No uses `prisma db push` ni `prisma migrate` contra la BD real.** Comprobado: `db push` intenta *borrar la tabla `_migrations`* (y exige `--accept-data-loss`), lo que borraría el historial y reaplicaría `001`.
 - **Todo idempotente**: `CREATE TABLE/INDEX IF NOT EXISTS`; para columnas, consulta `PRAGMA table_info("tabla")` antes de `ALTER TABLE ... ADD COLUMN`. La migración puede ejecutarse sobre BDs a medio estado.
 - **SQLite y `ALTER TABLE`**: `ADD COLUMN` no admite `NOT NULL` sin `DEFAULT` ni `PRIMARY KEY`/`UNIQUE` (crea el índice aparte). `RENAME COLUMN` y `DROP COLUMN` existen (SQLite 3.53 con better-sqlite3 13) pero `DROP COLUMN` falla si la columna está indexada, es FK o es única. Para cambiar restricciones o tipos: reconstruir la tabla (plantilla).
-- **Backup manual antes de una migración destructiva** (drop, rebuild, backfill grande): copia el `.db` (y `-wal`/`-shm` si existen). El backup diario automático corre **después** de migrar, así que no te protege ese día.
+- **Copia previa automática, pero avisa igualmente.** Con el id en `MIGRATION_IDS`, `initializeDatabase()` guarda `pre-migration-<fecha>.db` en la carpeta de backups antes de migrar una BD que ya tenía tablas (si la copia falla, **se cancela la migración y el arranque**). El backup diario `backup-<día>.db` corre **después** de migrar y no protege ese día. Aun así, ante una migración destructiva (drop, rebuild, backfill grande) pide al usuario una copia manual del `.db` (y `-wal`/`-shm` si existen) fuera del volumen.
 - **`seedInitialData` corre justo tras `001`**, antes de tus migraciones. Si tu migración renombra/elimina columnas que usa ese SQL de ejemplo, actualiza ese seed.
 - **Prisma al escribir con SQL crudo**: `@updatedAt` lo pone el Client; en inserts manuales (`better-sqlite3`) incluye `updated_at` o confía en `DEFAULT CURRENT_TIMESTAMP`.
 - **Enums**: añadir un valor no requiere DDL (es TEXT sin CHECK), pero sí `db:generate`, actualizar uniones de tipos escritas a mano en services (p. ej. `'PREPARED' | 'DIRECT_INVENTORY'`) y los mapas de etiquetas del frontend.
@@ -67,6 +67,7 @@ Si solo cambias `schema.prisma`, tu BD local puede seguir funcionando, pero cual
 ## Terminado cuando
 
 - [ ] `schema.prisma` y la migración nueva describen exactamente las mismas tablas/columnas/índices/FKs.
+- [ ] El id de la migración está en `MIGRATION_IDS` (copia previa automática) y `npm test` en verde (`health-and-init` y `ops-db-path` ejercitan las migraciones).
 - [ ] `db-check.mjs` pasa en BD vacía y sobre una copia de tu BD, y es idempotente (2.ª ejecución sin cambios).
 - [ ] `npm run db:generate` ejecutado y `npx tsc --noEmit` limpio.
 - [ ] Datos iniciales/`seed.ts` actualizados si hacen falta.

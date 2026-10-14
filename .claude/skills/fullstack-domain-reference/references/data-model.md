@@ -22,17 +22,17 @@ Fuente de verdad de tipos: `backend/prisma/schema.prisma`. Fuente de verdad del 
 
 | Modelo (tabla) | Campos clave | Relaciones / notas |
 |---|---|---|
-| `User` (`users`) | `fullName`, `username` (único, **sensible a mayúsculas**), `passwordHash` (`salt:hash` scrypt), `role`, `active`, `joinedAt` | `openedSessions` / `closedSessions` -> `CashSession` |
+| `User` (`users`) | `fullName`, `username` (índice único de la BD **sensible a mayúsculas**; el service lo comprueba sin distinguirlas), `passwordHash` (`salt:hash` scrypt), `role`, `active`, `joinedAt` | `openedSessions` / `closedSessions` -> `CashSession`. Sin columna de token: las sesiones son JWT sin estado en el servidor |
 | `Category` (`categories`) | `name` (único), `description?` | 1-N `Product` (restrict) |
 | `Product` (`products`) | `categoryId`, `name` (no único), `description?`, `salePrice`, `image?`, `available`, `productType` | `category`, `recipe?` (1-1), `orderDetails`, `saleDetails`. Índices: `categoryId`, `available` |
 | `Ingredient` (`ingredients`) | `name` (único), `description?`, `measurementUnit` (texto libre), `currentStock`, `minimumStock`, `unitCost`, `active` | `recipeDetails`, `inventoryMovements` |
 | `Recipe` (`recipes`) | `productId` (único), `name` | `product` (**cascade**), `recipeDetails` |
 | `RecipeDetail` (`recipe_details`) | `recipeId`, `ingredientId`, `quantity`, `measurementUnit` | `recipe` (**cascade**), `ingredient`; único `(recipeId, ingredientId)` |
-| `Order` (`orders`) | `number` (único, `ORD-0001`), `notes?`, `date`, `total`, `active`, `cashSessionId?` | `orderDetails`, `sale?` (1-1), `cashSession?`. Índices: `active`, `cashSessionId` |
+| `Order` (`orders`) | `number` (único, `ORD-0001`), `notes?`, `date`, `total`, `active`, `cashSessionId?` | `orderDetails`, `sale?` (1-1), `cashSession?`. Índices: `active`, `cashSessionId`. **Sin autor**: no guarda quién la creó ni la borró |
 | `OrderDetail` (`order_details`) | `orderId`, `productId`, `quantity` (Int), `unitPrice`, `subtotal`, `notes?` | `order` (**cascade**), `product` |
 | `Sale` (`sales`) | `invoiceNumber` (único, `INV-2026-0001`), `orderId?` (único), `subtotal`, `tax`, `discount`, `total`, `paymentMethod`, `fecha` | `order?`, `saleDetails` |
 | `SaleDetail` (`sale_details`) | `saleId`, `productId`, `quantity`, `unitPrice`, `subtotal` | `sale` (**cascade**), `product` |
-| `InventoryMovement` (`inventory_movements`) | `ingredientId`, `type`, `reason`, `quantity`, `previousStock`, `newStock`, `reference?`, `date` | `ingredient`. Índices: `ingredientId`, `date`. **Append-only**: no se edita |
+| `InventoryMovement` (`inventory_movements`) | `ingredientId`, `type`, `reason`, `quantity`, `previousStock`, `newStock`, `reference?`, `date` | `ingredient`. Índices: `ingredientId`, `date`. **Append-only**: no se edita. **Sin autor**: no guarda qué usuario hizo el ajuste |
 | `CashSession` (`cash_sessions`) | `sessionNumber` (único, `CAJA-2026-0001`), `status`, `openedAt`, `closedAt?`, `initialAmount`, `initialDenominations` (JSON), `finalAmount?`, `finalDenominations?` (JSON), `notes?`, `closingNotes?`, `openedByUserId?`, `closedByUserId?` | `openedByUser?`, `closedByUser?`, `orders` |
 
 ## Enums

@@ -19,7 +19,7 @@ Las tres rutas estáticas se registran **antes** de `/:id`. Mensajes y nombres d
 
 ## Pasos
 
-1. **Routes**: `multer` con `memoryStorage()` y `limits.fileSize` (10 MB); envuelve `upload.single('file')` para devolver 400 amigable si el archivo es demasiado grande (de lo contrario multer lanza al manejador global y responde 500).
+1. **Routes**: `multer` con `memoryStorage()` y `limits.fileSize` (10 MB); envuelve `upload.single('file')` para devolver 400 amigable si el archivo es demasiado grande (de lo contrario multer lanza al manejador global y responde 500). **Roles**: plantilla y reporte para todos los usuarios autenticados, importar solo ADMIN (`requireRole('ADMIN')` antes de `uploadSingleFile`, como en `ingredient.routes.ts`); declara las tres rutas en `backend/tests/helpers/roleMatrix.ts`. Las descargas también exigen `Authorization`: el frontend las pide con `requestBlob`, nunca con un enlace directo.
 2. **Controller**: valida `req.file`, extensión `.xlsx`, llama al service y responde. Para descargas, **construye el workbook primero**, luego fija `Content-Type` (`application/vnd.openxmlformats-officedocument.spreadsheetml.sheet`) y `Content-Disposition: attachment; filename="..."`, y finalmente `await workbook.xlsx.write(res); res.end()`. (Si algo falla después de enviar headers ya no se puede responder JSON.)
 3. **Service**: tres métodos (`generate...Template`, `export...ToExcel`, `import...FromExcel`) que usan `ExcelJS.Workbook`. Encabezado con fondo de marca (`FF584235`) y texto blanco (`FFFFFFFF`); usa colores **ARGB de 8 dígitos** (con 6 dígitos Excel puede interpretar mal el color).
 4. **Importación** (lo delicado):
@@ -36,6 +36,6 @@ Las tres rutas estáticas se registran **antes** de `/:id`. Mensajes y nombres d
 
 - [ ] Descarga la plantilla, ábrela en Excel/LibreOffice (colores y anchos correctos).
 - [ ] Importa una plantilla con filas válidas, una repetida (update), una vacía (skipped) y una inválida (errors): el `summary` de la **respuesta** debe reflejar el resultado real (los números ya deben estar cuando llega la respuesta).
-- [ ] Importa un `.csv`/`.xls`, un archivo > límite, y un `.xlsx` ajeno: respuestas 400 con mensaje claro.
+- [ ] Importa un `.csv`/`.xls`, un archivo > límite, y un `.xlsx` ajeno: respuestas 400 con mensaje claro. Con un WORKER (`api.mjs --as ...`): la plantilla y el reporte descargan, la importación responde 403.
 - [ ] `GET .../export/...` refleja lo importado.
 - [ ] `npx tsc --noEmit` limpio; plantilla/export/import registrados antes de `/:id`; `api-endpoints.md` actualizado.

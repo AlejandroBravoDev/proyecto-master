@@ -15,6 +15,7 @@ Se agregan al módulo existente (`supplier.routes.ts`, `supplier.controller.ts`,
 import { Router, Request, Response, NextFunction } from 'express';
 import multer from 'multer';
 import { supplierController } from '../controllers/supplier.controller';
+import { requireRole } from '../middleware/auth.middleware';
 
 const MAX_UPLOAD_BYTES = 10 * 1024 * 1024; // 10 MB
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: MAX_UPLOAD_BYTES } });
@@ -34,10 +35,11 @@ const router = Router();
 
 router.get('/', (req, res) => supplierController.getSuppliers(req, res));
 
-// Rutas estáticas ANTES de '/:id'
+// Rutas estáticas ANTES de '/:id'. Plantilla y reporte: todos; importar: solo ADMIN.
+// (Declara las tres en backend/tests/helpers/roleMatrix.ts: la prueba-guardia falla si faltan.)
 router.get('/template/suppliers', (req, res) => supplierController.downloadTemplate(req, res));
 router.get('/export/suppliers', (req, res) => supplierController.exportExcel(req, res));
-router.post('/import/suppliers', uploadSingleFile, (req, res) => supplierController.importExcel(req, res));
+router.post('/import/suppliers', requireRole('ADMIN'), uploadSingleFile, (req, res) => supplierController.importExcel(req, res));
 
 router.get('/:id', (req, res) => supplierController.getSupplierById(req, res));
 ```
@@ -59,8 +61,8 @@ router.get('/:id', (req, res) => supplierController.getSupplierById(req, res));
 
       await workbook.xlsx.write(res);
       return res.end();
-    } catch (error: any) {
-      return res.status(500).json({ error: 'Error al generar la plantilla de Excel', details: error.message });
+    } catch (error) {
+      return res.status(500).json({ error: 'Error al generar la plantilla de Excel', details: errorDetails(error) });
     }
   }
 
@@ -77,8 +79,8 @@ router.get('/:id', (req, res) => supplierController.getSupplierById(req, res));
 
       await workbook.xlsx.write(res);
       return res.end();
-    } catch (error: any) {
-      return res.status(500).json({ error: 'Error al exportar el reporte a Excel', details: error.message });
+    } catch (error) {
+      return res.status(500).json({ error: 'Error al exportar el reporte a Excel', details: errorDetails(error) });
     }
   }
 
@@ -110,12 +112,12 @@ router.get('/:id', (req, res) => supplierController.getSupplierById(req, res));
       if (error.message?.includes('end of central directory') || error.message?.includes("zip")) {
         return res.status(400).json({ error: 'El archivo no es un .xlsx válido' });
       }
-      return res.status(500).json({ error: 'Error al procesar la carga masiva', details: error.message });
+      return res.status(500).json({ error: 'Error al procesar la carga masiva', details: errorDetails(error) });
     }
   }
 ```
 
-(Requiere `import` de los tipos ya presentes en el controller: `Request`, `Response`.)
+(Requiere los `import` ya presentes en el controller: `Request`, `Response` y `errorDetails` de `../utils/http.utils`.)
 
 ## Service
 

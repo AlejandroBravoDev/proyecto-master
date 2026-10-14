@@ -28,7 +28,7 @@ Cada plantilla es un bloque que se pega dentro de `initializeDatabase()`, despu�
     }
 ```
 
-Reglas: id inmutable y único; una migración = una transacción; nunca referencies código de negocio (solo SQL); si falla, el error se propaga a `initializeDatabase()` (el servidor arrancará sin esa migración y las rutas fallarán, así que prueba con `db-check.mjs`).
+Reglas: id inmutable y único; **añade el id también a `MIGRATION_IDS`** (constante exportada al inicio de `init.ts`: habilita la copia `pre-migration-<fecha>.db` previa); una migración = una transacción; nunca referencies código de negocio (solo SQL); si falla, el error se propaga a `initializeDatabase()` y **el servidor no arranca** (sale con código 1: así el despliegue falla a la vista en vez de dejar rutas rotas), así que prueba con `db-check.mjs`.
 
 ## Tabla nueva (con índice único)
 

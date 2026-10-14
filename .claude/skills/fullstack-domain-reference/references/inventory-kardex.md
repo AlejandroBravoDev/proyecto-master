@@ -31,6 +31,7 @@ Todo cambio de `Ingredient.currentStock` debe crear un `InventoryMovement` con `
 | Ajuste manual positivo | `IN` | el elegido (`PURCHASE`/`MANUAL_ADJUSTMENT`...) | `Manual Adjustment` |
 | Ajuste manual negativo / merma | `OUT` | `WASTE` o `MANUAL_ADJUSTMENT` | `Manual Adjustment` |
 | Venta de producto con receta | `OUT` | `SALE` | `Order #ORD-0001` |
+| Eliminar una comanda (devolución de stock) | `IN` | `MANUAL_ADJUSTMENT` | `Anulación Order #ORD-0001` |
 | Importación masiva (insumo nuevo con stock) | `IN` | `PURCHASE` | `Bulk Excel Import` |
 | Importación masiva (insumo existente con otro stock) | `IN` / `OUT` según el signo de la diferencia | `MANUAL_ADJUSTMENT` | `Bulk Excel Import` |
 
@@ -39,14 +40,19 @@ Todo cambio de `Ingredient.currentStock` debe crear un `InventoryMovement` con `
 ## Ajustes manuales
 
 `PUT /api/ingredients/:id` con `adjustStock` (delta **con signo**) y `adjustReason`:
+- `adjustReason` debe ser `PURCHASE`, `SALE`, `WASTE` o `MANUAL_ADJUSTMENT` (otro valor -> 400); `adjustStock` debe ser numérico;
 - nuevo stock = actual + delta; si queda < 0 -> `STOCK_CANNOT_BE_NEGATIVE` (400);
-- crea el movimiento y actualiza el insumo (hoy en llamadas separadas, no en transacción; mejóralo si tocas ese código).
+- crea el movimiento y actualiza el insumo **en una sola transacción**.
 
-La UI (`StockAdjustmentModal`) convierte el motivo en signo: `PURCHASE` = `+abs`, `WASTE` = `-abs`, `MANUAL_ADJUSTMENT` = el valor tal cual; calcula el "stock proyectado" y también envía `unitCost` (el backend lo **sobrescribe**, no promedia).
+Un **WORKER** puede hacer este ajuste (el servidor solo le admite `adjustStock` y/o `adjustReason`; el resto de campos del insumo son solo ADMIN), pero el movimiento **no guarda quién lo hizo** (`InventoryMovement` no tiene usuario: `known-issues.md`, R3).
 
-## Consumo por ventas
+La UI (`StockAdjustmentModal`) convierte el motivo en signo: `PURCHASE` = `+abs`, `WASTE` = `-abs`, `MANUAL_ADJUSTMENT` = el valor tal cual; calcula el "stock proyectado" y, solo para el administrador, envía también `unitCost` (el backend lo **sobrescribe**, no promedia). Al WORKER no se le muestra ese campo ni se envía: el servidor solo le admite `adjustStock` y `adjustReason`, y cualquier campo extra da 403 (prop `canEditUnitCost` del modal, cubierta por `StockAdjustmentModal.test.jsx`).
 
-`OrderService.createOrder`: por cada línea con receta, descuenta `detail.quantity * qty` de cada insumo y registra `OUT/SALE`. **No valida stock suficiente** (puede quedar negativo). `deleteOrder` **no devuelve** el stock. Si implementas devoluciones, crea movimientos compensatorios `IN` (no borres movimientos).
+## Consumo por ventas y devolución
+
+`OrderService.createOrder`: por cada línea con receta suma lo que necesita **toda la comanda por insumo** y lo compara con el stock leído dentro de la transacción; si algún insumo no alcanza responde 400 `{ error, shortages: [{ ingredientId, name, measurementUnit, needed, available }] }` y **no crea ni descuenta nada**. Si alcanza, descuenta `detail.quantity * qty` de cada insumo y registra `OUT/SALE`.
+
+`OrderService.deleteOrder` **devuelve el stock** en la misma transacción: por cada insumo consumido (lo que realmente salió del Kardex con la referencia de esa comanda, no lo que diga la receta hoy) crea un movimiento `IN` / `MANUAL_ADJUSTMENT` con referencia `Anulación Order #ORD-xxxx`; funciona aunque la comanda esté archivada. Los productos `DIRECT_INVENTORY` siguen sin descontar ni devolver nada (`known-issues.md`, B7). El Kardex sigue siendo append-only: la devolución es un movimiento compensatorio, no un borrado.
 
 ## Alertas de stock bajo
 
@@ -64,7 +70,7 @@ Columnas de la plantilla/importación (orden fijo; se validan los encabezados): 
 | `IngredientTable.jsx` | tabla con acciones: ajustar stock y ver Kardex (todos los roles); editar y eliminar (solo admin) |
 | `IngredientModal.jsx` | crear/editar; en edición el stock actual está deshabilitado ("usa Ajustar Stock") |
 | `StockAdjustmentModal.jsx` | movimiento de Kardex con proyección |
-| `KardexModal.jsx` | movimientos de un insumo (`GET /ingredients/:id`) o globales (`GET /inventory/movements`) |
+| `KardexModal.jsx` | movimientos de un insumo (`GET /ingredients/:id`) o globales (`GET /inventory/movements`, hoy sin `page`/`limit`: pagina en cliente) |
 | `BulkImportModal.jsx` + header | plantilla, exportar e importar (importar solo admin) |
 
-En productos, la receta solo se define al **crear** el producto desde la UI (la edición no la envía).
+En productos, la receta se define al crear el producto y, al **editar**, `ProductModal` la envía solo si cambió; la página la guarda aparte con `POST /api/recipes`, que **reemplaza** la receta completa (los cambios de insumos se aplican de verdad).

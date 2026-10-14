@@ -1,13 +1,13 @@
 # Plantillas de módulo backend (ejemplo: Supplier / proveedores)
 
-Reemplaza `Supplier` -> tu entidad, `supplier` -> instancia/archivo, `suppliers` -> plural/URL/tabla, y ajusta los campos. La primera línea de cada bloque indica la ruta del archivo.
+Reemplaza `Supplier` -> tu entidad, `supplier` -> instancia/archivo, `suppliers` -> plural/URL/tabla, y ajusta los campos. La primera línea de cada bloque indica la ruta del archivo. Los helpers de validación y errores (`errorDetails`, `parseId`, `parseRequiredText`, `parseOptionalText`, `validateIdParam`, `parsePagination`) viven en `backend/src/utils/http.utils.ts`; los guardias de rol, en `backend/src/middleware/auth.middleware.ts`.
 
 ## Contenido
 - Modelo Prisma
 - Service
 - Controller
-- Routes
-- Registro en el router maestro
+- Routes (con rol)
+- Registro en el router maestro y matriz de roles
 - Variante: paginación en servidor
 - Variante: filtros tipados
 - Pruebas rápidas
@@ -48,16 +48,6 @@ model Supplier {
 
 import prisma from '../prisma/client';
 
-/**
- * Normaliza un texto opcional: undefined = no tocar, null o vacío = limpiar.
- */
-const toNullable = (value?: string | null): string | null | undefined => {
-  if (value === undefined) return undefined;
-  if (value === null) return null;
-  const trimmed = value.trim();
-  return trimmed === '' ? null : trimmed;
-};
-
 export class SupplierService {
   /**
    * Lista los proveedores ordenados por nombre.
@@ -83,16 +73,13 @@ export class SupplierService {
   }
 
   /**
-   * Registra un proveedor nuevo.
+   * Registra un proveedor nuevo. El controller ya validó y recortó los textos
+   * (`phone`/`email`: null = sin valor).
    * @param data Nombre (obligatorio), teléfono y email opcionales
    */
   async createSupplier(data: { name: string; phone?: string | null; email?: string | null }) {
     return prisma.supplier.create({
-      data: {
-        name: data.name.trim(),
-        phone: toNullable(data.phone) ?? null,
-        email: toNullable(data.email) ?? null
-      }
+      data: { name: data.name, phone: data.phone ?? null, email: data.email ?? null }
     });
   }
 
@@ -105,15 +92,7 @@ export class SupplierService {
     id: number,
     data: { name?: string; phone?: string | null; email?: string | null; active?: boolean }
   ) {
-    return prisma.supplier.update({
-      where: { id },
-      data: {
-        name: data.name?.trim(),
-        phone: toNullable(data.phone),
-        email: toNullable(data.email),
-        active: data.active
-      }
-    });
+    return prisma.supplier.update({ where: { id }, data });
   }
 
   /**
@@ -132,6 +111,8 @@ export const supplierService = new SupplierService();
 
 ## Controller
 
+El id de la URL ya llega validado (400 `ID inválido` lo responde `router.param`, ver Routes), así que el controller solo hace `Number(req.params.id)`.
+
 ```ts
 // backend/src/controllers/supplier.controller.ts
 /**
@@ -144,6 +125,7 @@ export const supplierService = new SupplierService();
 
 import { Request, Response } from 'express';
 import { supplierService } from '../services/supplier.service';
+import { errorDetails, parseOptionalText, parseRequiredText } from '../utils/http.utils';
 
 export class SupplierController {
   /**
@@ -155,8 +137,8 @@ export class SupplierController {
       const search = typeof req.query.search === 'string' ? req.query.search : undefined;
       const suppliers = await supplierService.getAllSuppliers(search);
       return res.json(suppliers);
-    } catch (error: any) {
-      return res.status(500).json({ error: 'Error al obtener los proveedores', details: error.message });
+    } catch (error) {
+      return res.status(500).json({ error: 'Error al obtener los proveedores', details: errorDetails(error) });
     }
   }
 
@@ -166,19 +148,14 @@ export class SupplierController {
    */
   async getSupplierById(req: Request, res: Response) {
     try {
-      const id = Number(req.params.id);
-      if (!Number.isInteger(id)) {
-        return res.status(400).json({ error: 'ID de proveedor inválido' });
-      }
-
-      const supplier = await supplierService.getSupplierById(id);
+      const supplier = await supplierService.getSupplierById(Number(req.params.id));
       if (!supplier) {
         return res.status(404).json({ error: 'Proveedor no encontrado' });
       }
 
       return res.json(supplier);
-    } catch (error: any) {
-      return res.status(500).json({ error: 'Error al obtener el proveedor', details: error.message });
+    } catch (error) {
+      return res.status(500).json({ error: 'Error al obtener el proveedor', details: errorDetails(error) });
     }
   }
 
@@ -190,41 +167,61 @@ export class SupplierController {
     try {
       const { name, phone, email } = req.body ?? {};
 
-      if (!name || typeof name !== 'string' || !name.trim()) {
+      const trimmedName = parseRequiredText(name);
+      if (trimmedName === null) {
         return res.status(400).json({ error: 'El nombre del proveedor es obligatorio' });
       }
+      const parsedPhone = parseOptionalText(phone);
+      const parsedEmail = parseOptionalText(email);
+      if (!parsedPhone.valid || !parsedEmail.valid) {
+        return res.status(400).json({ error: 'El teléfono y el email deben ser texto' });
+      }
 
-      const supplier = await supplierService.createSupplier({ name, phone, email });
+      const supplier = await supplierService.createSupplier({
+        name: trimmedName,
+        phone: parsedPhone.value,
+        email: parsedEmail.value
+      });
       return res.status(201).json(supplier);
     } catch (error: any) {
       if (error.code === 'P2002') {
         return res.status(400).json({ error: 'Ya existe un proveedor con este nombre' });
       }
-      return res.status(500).json({ error: 'Error al crear el proveedor', details: error.message });
+      return res.status(500).json({ error: 'Error al crear el proveedor', details: errorDetails(error) });
     }
   }
 
   /**
    * PUT /api/suppliers/:id
-   * Actualiza los campos enviados de un proveedor.
+   * Actualiza los campos enviados de un proveedor (`phone: null` o '' lo limpia).
    */
   async updateSupplier(req: Request, res: Response) {
     try {
-      const id = Number(req.params.id);
-      if (!Number.isInteger(id)) {
-        return res.status(400).json({ error: 'ID de proveedor inválido' });
-      }
-
       const { name, phone, email, active } = req.body ?? {};
+      const data: { name?: string; phone?: string | null; email?: string | null; active?: boolean } = {};
 
-      if (name !== undefined && (typeof name !== 'string' || !name.trim())) {
-        return res.status(400).json({ error: 'El nombre del proveedor no puede estar vacío' });
+      if (name !== undefined) {
+        const trimmedName = parseRequiredText(name);
+        if (trimmedName === null) {
+          return res.status(400).json({ error: 'El nombre del proveedor no puede estar vacío' });
+        }
+        data.name = trimmedName;
       }
-      if (active !== undefined && typeof active !== 'boolean') {
-        return res.status(400).json({ error: 'El campo "active" debe ser booleano' });
+      const parsedPhone = parseOptionalText(phone);
+      const parsedEmail = parseOptionalText(email);
+      if (!parsedPhone.valid || !parsedEmail.valid) {
+        return res.status(400).json({ error: 'El teléfono y el email deben ser texto' });
+      }
+      if (parsedPhone.value !== undefined) data.phone = parsedPhone.value;
+      if (parsedEmail.value !== undefined) data.email = parsedEmail.value;
+      if (active !== undefined) {
+        if (typeof active !== 'boolean') {
+          return res.status(400).json({ error: 'El campo "active" debe ser booleano' });
+        }
+        data.active = active;
       }
 
-      const supplier = await supplierService.updateSupplier(id, { name, phone, email, active });
+      const supplier = await supplierService.updateSupplier(Number(req.params.id), data);
       return res.json(supplier);
     } catch (error: any) {
       if (error.code === 'P2025') {
@@ -233,7 +230,7 @@ export class SupplierController {
       if (error.code === 'P2002') {
         return res.status(400).json({ error: 'Ya existe un proveedor con este nombre' });
       }
-      return res.status(500).json({ error: 'Error al actualizar el proveedor', details: error.message });
+      return res.status(500).json({ error: 'Error al actualizar el proveedor', details: errorDetails(error) });
     }
   }
 
@@ -243,12 +240,7 @@ export class SupplierController {
    */
   async deleteSupplier(req: Request, res: Response) {
     try {
-      const id = Number(req.params.id);
-      if (!Number.isInteger(id)) {
-        return res.status(400).json({ error: 'ID de proveedor inválido' });
-      }
-
-      await supplierService.deleteSupplier(id);
+      await supplierService.deleteSupplier(Number(req.params.id));
       return res.json({ message: 'Proveedor eliminado correctamente' });
     } catch (error: any) {
       if (error.code === 'P2025') {
@@ -258,7 +250,7 @@ export class SupplierController {
         // FK restrict: otros registros (p. ej. compras) apuntan a este proveedor
         return res.status(400).json({ error: 'No se puede eliminar el proveedor porque tiene registros asociados. Desactívalo en su lugar.' });
       }
-      return res.status(500).json({ error: 'Error al eliminar el proveedor', details: error.message });
+      return res.status(500).json({ error: 'Error al eliminar el proveedor', details: errorDetails(error) });
     }
   }
 }
@@ -266,7 +258,9 @@ export class SupplierController {
 export const supplierController = new SupplierController();
 ```
 
-## Routes
+`details` es siempre `errorDetails(error)` (texto; los errores de Prisma se sustituyen por uno genérico): **nunca** `details: error`.
+
+## Routes (con rol)
 
 ```ts
 // backend/src/routes/supplier.routes.ts
@@ -275,12 +269,18 @@ export const supplierController = new SupplierController();
  * RUTAS DE PROVEEDORES (ROUTER LAYER)
  * ====================================================
  * Mapeo de verbos HTTP hacia las acciones de SupplierController.
+ * Roles: todos leen; solo ADMIN escribe.
  */
 
 import { Router } from 'express';
 import { supplierController } from '../controllers/supplier.controller';
+import { requireRole } from '../middleware/auth.middleware';
+import { validateIdParam } from '../utils/http.utils';
 
 const router = Router();
+
+// Cualquier :id que no sea un entero positivo responde 400 { error: 'ID inválido' }
+router.param('id', validateIdParam);
 
 // Endpoint GET: Lista los proveedores (búsqueda opcional con ?search=)
 router.get('/', (req, res) => supplierController.getSuppliers(req, res));
@@ -288,51 +288,75 @@ router.get('/', (req, res) => supplierController.getSuppliers(req, res));
 // Endpoint GET: Obtiene un proveedor por su ID
 router.get('/:id', (req, res) => supplierController.getSupplierById(req, res));
 
-// Endpoint POST: Registra un proveedor nuevo
-router.post('/', (req, res) => supplierController.createSupplier(req, res));
+// Endpoint POST: Registra un proveedor nuevo (solo ADMIN)
+router.post('/', requireRole('ADMIN'), (req, res) => supplierController.createSupplier(req, res));
 
-// Endpoint PUT: Actualiza un proveedor existente
-router.put('/:id', (req, res) => supplierController.updateSupplier(req, res));
+// Endpoint PUT: Actualiza un proveedor existente (solo ADMIN)
+router.put('/:id', requireRole('ADMIN'), (req, res) => supplierController.updateSupplier(req, res));
 
-// Endpoint DELETE: Elimina un proveedor
-router.delete('/:id', (req, res) => supplierController.deleteSupplier(req, res));
+// Endpoint DELETE: Elimina un proveedor (solo ADMIN)
+router.delete('/:id', requireRole('ADMIN'), (req, res) => supplierController.deleteSupplier(req, res));
 
 export default router;
 ```
 
-Si agregas rutas estáticas (`/export/...`, `/template/...`), colócalas **antes** de `router.get('/:id', ...)`.
+Si agregas rutas estáticas (`/export/...`, `/template/...`), colócalas **antes** de `router.get('/:id', ...)`. Si el trabajador solo debe poder tocar ciertos campos de una ruta (como marcar un producto agotado), usa `requireAdminOrFields('available')` en lugar de `requireRole('ADMIN')`. Si **todo** el módulo es solo ADMIN, pon `requireRole('ADMIN')` en el montaje de `routes/index.ts` (como `/users` y `/sales`).
 
-## Registro en el router maestro
+## Registro en el router maestro y matriz de roles
 
 ```ts
-// backend/src/routes/index.ts (fragmentos a agregar)
+// backend/src/routes/index.ts (fragmentos a agregar, DESPUÉS de `router.use(authenticate)`)
 import supplierRoutes from './supplier.routes';
 
 // Montar submódulo de Proveedores en /api/suppliers
 router.use('/suppliers', supplierRoutes);
 ```
 
+Todo lo que se monte debajo de `router.use(authenticate)` exige token automáticamente. Después declara **cada ruta** en `backend/tests/helpers/roleMatrix.ts` (la prueba-guardia `auth-route-guard.test.ts` falla si falta o sobra alguna):
+
+```ts
+// backend/tests/helpers/roleMatrix.ts (agregar a ROLE_MATRIX)
+{ route: 'GET /api/suppliers', worker: 'allow' },
+{ route: 'GET /api/suppliers/:id', worker: 'allow' },
+{ route: 'POST /api/suppliers', worker: 'deny' },
+{ route: 'PUT /api/suppliers/:id', worker: 'deny' },
+{ route: 'DELETE /api/suppliers/:id', worker: 'deny' },
+```
+
 ## Variante: paginación en servidor
+
+Contrato del proyecto: si no llega `page` ni `limit` se devuelve la lista completa; con alguno, `{ total, page, limit, totalPages, <items> }`.
 
 ```ts
 // En el service
-async getSuppliersPage(limit = 20, page = 1, searchTerm?: string) {
-  const safePage = Math.max(1, page);
+async getSuppliersPage(pagination: { page: number; limit: number }, searchTerm?: string) {
   const where = searchTerm?.trim()
     ? { name: { contains: searchTerm.trim() } }
     : undefined;
 
-  const [suppliers, total] = await Promise.all([
-    prisma.supplier.findMany({ where, skip: (safePage - 1) * limit, take: limit, orderBy: { name: 'asc' } }),
-    prisma.supplier.count({ where })
+  const [total, suppliers] = await Promise.all([
+    prisma.supplier.count({ where }),
+    prisma.supplier.findMany({
+      where,
+      orderBy: { name: 'asc' },
+      skip: (pagination.page - 1) * pagination.limit,
+      take: pagination.limit
+    })
   ]);
 
-  return { total, page: safePage, limit, totalPages: Math.ceil(total / limit), suppliers };
+  return { total, page: pagination.page, limit: pagination.limit, totalPages: Math.ceil(total / pagination.limit), suppliers };
 }
 
-// En el controller: lee y acota (no asignes a req.query)
-const limit = Math.min(100, Math.max(1, Number(req.query.limit) || 20));
-const page = Math.max(1, Number(req.query.page) || 1);
+// En el controller (parsePagination: undefined = sin paginar, null = inválido -> 400, recorta limit al máximo)
+import { parsePagination } from '../utils/http.utils';
+
+const pagination = parsePagination(req.query, { defaultLimit: 20, maxLimit: 100 });
+if (pagination === null) {
+  return res.status(400).json({ error: 'page y limit deben ser enteros mayores a 0' });
+}
+if (pagination) {
+  return res.json(await supplierService.getSuppliersPage(pagination, search));
+}
 ```
 
 ## Variante: filtros tipados
@@ -345,11 +369,11 @@ if (filters?.active !== undefined) where.active = filters.active;
 if (filters?.search) where.name = { contains: filters.search };
 ```
 
-En el controller convierte los query params antes de pasarlos: `available: req.query.available !== undefined ? req.query.available === 'true' : undefined`.
+En el controller convierte los query params antes de pasarlos y responde 400 si un valor no es válido: `categoryId` con `parseId(...)` (devuelve `null` si no es un entero positivo) y `available: req.query.available !== undefined ? req.query.available === 'true' : undefined`.
 
 ## Pruebas rápidas
 
-Con el backend corriendo (`npm run dev`), desde la raíz del repo (funciona igual en PowerShell, cmd y bash):
+Con el backend corriendo (`npm run dev`, o aislado como indica `fullstack-verify-changes`), desde la raíz del repo (funciona igual en PowerShell, cmd y bash). `api.mjs` inicia sesión por sí solo (`Admin` / `123456` por defecto) y adjunta el token; con `--as <usuario>` entras con otro rol.
 
 ```bash
 node .claude/skills/fullstack-verify-changes/scripts/api.mjs POST /api/suppliers name=Acme phone=555-1234
@@ -359,5 +383,6 @@ node .claude/skills/fullstack-verify-changes/scripts/api.mjs PUT /api/suppliers/
 node .claude/skills/fullstack-verify-changes/scripts/api.mjs POST /api/suppliers           # sin body -> 400
 node .claude/skills/fullstack-verify-changes/scripts/api.mjs GET /api/suppliers/abc        # id inválido -> 400
 node .claude/skills/fullstack-verify-changes/scripts/api.mjs GET /api/suppliers/9999       # inexistente -> 404
+node .claude/skills/fullstack-verify-changes/scripts/api.mjs --no-auth GET /api/suppliers  # sin token -> 401
 node .claude/skills/fullstack-verify-changes/scripts/api.mjs DELETE /api/suppliers/1
 ```

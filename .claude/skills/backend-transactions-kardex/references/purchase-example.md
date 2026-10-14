@@ -8,7 +8,7 @@ Supone que ya existe el módulo `Supplier` (ver `backend-new-module/references/t
 - Helper de correlativos
 - Service
 - Controller
-- Routes y registro
+- Routes, roles y registro
 - Pruebas
 
 ## Modelo Prisma
@@ -86,56 +86,29 @@ CREATE INDEX IF NOT EXISTS "purchase_details_ingredient_id_idx" ON "purchase_det
 
 ## Helper de correlativos
 
-Créalo una sola vez, la primera vez que un documento nuevo lo necesite.
+`backend/src/utils/sequence.utils.ts` **ya existe** (`nextSequentialCode` y los envoltorios `nextOrderNumber`, `nextInvoiceNumber`, `nextCashSessionNumber`). No lo recrees: añade al final un envoltorio para tu documento, con el mismo patrón que los existentes.
 
 ```ts
-// backend/src/utils/sequence.utils.ts
-/**
- * ====================================================
- * GENERADOR DE CÓDIGOS CORRELATIVOS
- * ====================================================
- * Genera códigos tipo "COM-2026-0001" sin colisiones, incluso si hay
- * registros eliminados o códigos heredados. Debe invocarse DENTRO de la
- * transacción que crea el documento.
- */
+// backend/src/utils/sequence.utils.ts (agregar al final)
 
-export interface SequenceOptions {
-  /** Prefijo fijo, p. ej. "ORD-" o "INV-2026-" */
-  prefix: string;
-  /** Devuelve el último registro (por id) con su código, o null si no hay registros */
-  getLast: () => Promise<{ id: number; code: string | null } | null>;
-  /** Indica si un código ya está en uso */
-  exists: (code: string) => Promise<boolean>;
-  /** Cantidad de dígitos del correlativo (por defecto 4) */
-  pad?: number;
-}
-
-export async function nextSequentialCode({
-  prefix,
-  getLast,
-  exists,
-  pad = 4
-}: SequenceOptions): Promise<string> {
-  const last = await getLast();
-
-  let seq = (last?.id ?? 0) + 1;
-  const match = last?.code?.match(/(\d+)$/);
-  if (match) {
-    const lastNum = parseInt(match[1], 10);
-    if (!isNaN(lastNum)) {
-      seq = Math.max(seq, lastNum + 1);
-    }
-  }
-
-  let code = `${prefix}${String(seq).padStart(pad, '0')}`;
-  while (await exists(code)) {
-    seq++;
-    code = `${prefix}${String(seq).padStart(pad, '0')}`;
-  }
-
-  return code;
+/** Siguiente número de compra: COM-2026-0001 */
+export function nextPurchaseNumber(db: DbClient): Promise<string> {
+  return nextSequentialCode({
+    prefix: `COM-${new Date().getFullYear()}-`,
+    getLast: async () => {
+      const last = await db.purchase.findFirst({
+        orderBy: { id: 'desc' },
+        select: { id: true, number: true }
+      });
+      return last ? { id: last.id, code: last.number } : null;
+    },
+    exists: async (code) =>
+      (await db.purchase.findUnique({ where: { number: code }, select: { id: true } })) !== null
+  });
 }
 ```
+
+`DbClient` es `Prisma.TransactionClient` (acepta `tx` y también `prisma`). Llámalo siempre con el `tx` de la transacción que crea el documento.
 
 ## Service
 
@@ -151,7 +124,7 @@ export async function nextSequentialCode({
  */
 
 import prisma from '../prisma/client';
-import { nextSequentialCode } from '../utils/sequence.utils';
+import { nextPurchaseNumber } from '../utils/sequence.utils';
 
 export interface PurchaseItemInput {
   ingredientId: number;
@@ -219,20 +192,8 @@ export class PurchaseService {
         throw new Error(`INGREDIENT_NOT_FOUND:${missingId}`);
       }
 
-      // 3. Código correlativo único (COM-AAAA-NNNN)
-      const year = new Date().getFullYear();
-      const number = await nextSequentialCode({
-        prefix: `COM-${year}-`,
-        getLast: async () => {
-          const last = await tx.purchase.findFirst({
-            orderBy: { id: 'desc' },
-            select: { id: true, number: true }
-          });
-          return last ? { id: last.id, code: last.number } : null;
-        },
-        exists: async (code) =>
-          (await tx.purchase.findUnique({ where: { number: code }, select: { id: true } })) !== null
-      });
+      // 3. Código correlativo único (COM-AAAA-NNNN), generado dentro de la transacción
+      const number = await nextPurchaseNumber(tx);
 
       // 4. Cabecera y detalle
       const details = data.items.map((item) => ({
@@ -303,6 +264,7 @@ export const purchaseService = new PurchaseService();
 
 import { Request, Response } from 'express';
 import { purchaseService } from '../services/purchase.service';
+import { errorDetails } from '../utils/http.utils';
 
 export class PurchaseController {
   /**
@@ -313,30 +275,25 @@ export class PurchaseController {
     try {
       const purchases = await purchaseService.getAllPurchases();
       return res.json(purchases);
-    } catch (error: any) {
-      return res.status(500).json({ error: 'Error al obtener las compras', details: error.message });
+    } catch (error) {
+      return res.status(500).json({ error: 'Error al obtener las compras', details: errorDetails(error) });
     }
   }
 
   /**
    * GET /api/purchases/:id
-   * Retorna el detalle de una compra.
+   * Retorna el detalle de una compra (el id ya llega validado por `router.param`: 400 si no es entero positivo).
    */
   async getPurchaseById(req: Request, res: Response) {
     try {
-      const id = Number(req.params.id);
-      if (!Number.isInteger(id)) {
-        return res.status(400).json({ error: 'ID de compra inválido' });
-      }
-
-      const purchase = await purchaseService.getPurchaseById(id);
+      const purchase = await purchaseService.getPurchaseById(Number(req.params.id));
       if (!purchase) {
         return res.status(404).json({ error: 'Compra no encontrada' });
       }
 
       return res.json(purchase);
-    } catch (error: any) {
-      return res.status(500).json({ error: 'Error al obtener la compra', details: error.message });
+    } catch (error) {
+      return res.status(500).json({ error: 'Error al obtener la compra', details: errorDetails(error) });
     }
   }
 
@@ -390,7 +347,7 @@ export class PurchaseController {
       if (error.code === 'P2003') {
         return res.status(400).json({ error: 'Alguna referencia de la compra (proveedor o insumo) no es válida' });
       }
-      return res.status(500).json({ error: 'Error al registrar la compra', details: error.message });
+      return res.status(500).json({ error: 'Error al registrar la compra', details: errorDetails(error) });
     }
   }
 }
@@ -398,7 +355,9 @@ export class PurchaseController {
 export const purchaseController = new PurchaseController();
 ```
 
-## Routes y registro
+## Routes, roles y registro
+
+Decisión de negocio del ejemplo: todos consultan las compras, **solo el ADMIN las registra** (mueve stock y costos).
 
 ```ts
 // backend/src/routes/purchase.routes.ts
@@ -410,8 +369,12 @@ export const purchaseController = new PurchaseController();
 
 import { Router } from 'express';
 import { purchaseController } from '../controllers/purchase.controller';
+import { requireRole } from '../middleware/auth.middleware';
+import { validateIdParam } from '../utils/http.utils';
 
 const router = Router();
+
+router.param('id', validateIdParam);
 
 // Endpoint GET: Lista las compras registradas
 router.get('/', (req, res) => purchaseController.getPurchases(req, res));
@@ -419,17 +382,17 @@ router.get('/', (req, res) => purchaseController.getPurchases(req, res));
 // Endpoint GET: Detalle de una compra
 router.get('/:id', (req, res) => purchaseController.getPurchaseById(req, res));
 
-// Endpoint POST: Registra una compra (suma stock y registra Kardex)
-router.post('/', (req, res) => purchaseController.createPurchase(req, res));
+// Endpoint POST: Registra una compra (suma stock y registra Kardex) - solo ADMIN
+router.post('/', requireRole('ADMIN'), (req, res) => purchaseController.createPurchase(req, res));
 
 export default router;
 ```
 
-Registro en `routes/index.ts`: `import purchaseRoutes from './purchase.routes';` y `router.use('/purchases', purchaseRoutes);`.
+Registro en `routes/index.ts`, debajo de `router.use(authenticate)`: `import purchaseRoutes from './purchase.routes';` y `router.use('/purchases', purchaseRoutes);`. Y en `backend/tests/helpers/roleMatrix.ts`: `GET /api/purchases` y `GET /api/purchases/:id` con `worker: 'allow'`, `POST /api/purchases` con `worker: 'deny'` (sin esas entradas, la prueba-guardia falla).
 
 ## Pruebas
 
-`api.mjs` acepta JSON "relajado" en `--json` (claves sin comillas), así el mismo comando funciona en PowerShell, cmd y bash sin escapar comillas.
+`api.mjs` acepta JSON "relajado" en `--json` (claves sin comillas), así el mismo comando funciona en PowerShell, cmd y bash sin escapar comillas, e inicia sesión como `Admin` por sí solo (con `--as <usuario> --password <clave>` pruebas otro rol; un WORKER debe recibir 403 en el `POST`).
 
 ```bash
 # con un proveedor (id 1) y un insumo (id 1) ya creados:

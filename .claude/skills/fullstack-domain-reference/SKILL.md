@@ -22,14 +22,14 @@ En producción **un solo proceso Node** sirve la API y el SPA compilado (`fronte
 
 | Vas a... | Lee |
 |---|---|
-| Entender estructura, scripts, variables de entorno, arranque, ruta de la BD | `references/architecture.md` |
+| Entender estructura, scripts, variables de entorno (incluidas las de seguridad), cadena de middlewares, arranque, ruta de la BD | `references/architecture.md` |
 | Agregar o cambiar tablas, campos o relaciones | `references/data-model.md` |
 | Consumir o crear endpoints (contrato de request/response/errores) | `references/api-endpoints.md` |
 | Tocar apertura/cierre de caja, denominaciones, turnos | `references/cash-register.md` |
 | Tocar insumos, stock, Kardex, recetas, plantillas Excel | `references/inventory-kardex.md` |
 | Tocar comandas, ventas, numeración, precios | `references/orders-sales.md` |
-| Tocar login, usuarios, roles, permisos | `references/users-roles.md` |
-| Vas a copiar un patrón existente y dudas si es buen ejemplo o legado | `references/known-issues.md` |
+| Tocar login, sesión (JWT), usuarios, roles, permisos (matriz de roles por ruta) | `references/users-roles.md` |
+| Vas a copiar un patrón existente y dudas si es buen ejemplo o legado; o quieres saber qué riesgos siguen abiertos | `references/known-issues.md` |
 
 ## Reglas transversales (las que más se rompen)
 
@@ -37,6 +37,7 @@ En producción **un solo proceso Node** sirve la API y el SPA compilado (`fronte
 2. **La BD no se migra con `prisma migrate`**: el esquema físico lo crea `backend/src/prisma/init.ts` al arrancar. Cambiar `schema.prisma` sin añadir la migración allí rompe cualquier BD nueva (skill `backend-db-migration`).
 3. **Sin caja abierta no hay comandas**: `POST /api/orders` falla con `CAJA_CERRADA`. Cerrar caja archiva las comandas activas.
 4. **Todo cambio de stock deja un movimiento de Kardex** en la misma transacción (skill `backend-transactions-kardex`).
-5. **No hay autenticación en el servidor**: los roles solo se aplican en la UI. No existe `req.user`; la caja recibe `userId` en el body. Avisa al usuario si una tarea depende de seguridad real.
+5. **El servidor autentica y autoriza** (JWT + roles): todo `/api` salvo `POST /api/auth/login` exige `Authorization: Bearer <token>`; el rol se valida en el servidor, no en la UI. `req.user` (`{ id, username, fullName, role }`) lo rellena `authenticate` leyendo la BD en cada petición; la caja usa `req.user.id` e **ignora** el `userId` del body. Toda ruta nueva debe decidir su rol y declararlo en `backend/tests/helpers/roleMatrix.ts` (la prueba-guardia `auth-route-guard` falla si no). Los controles de interfaz (`isAdmin`, `ProtectedRoute`) son comodidad, no seguridad. Detalle: `references/users-roles.md`.
 6. **Idioma**: textos de UI, mensajes de error y comentarios del backend en español; identificadores y JSDoc del frontend en inglés; commits en inglés.
 7. **Moneda**: montos en USD con `Float`; redondea con `Number(x.toFixed(2))` antes de guardar o sumar.
+8. **Un 500 nunca filtra internals**: `details` es siempre texto (`errorDetails(error)` de `utils/http.utils.ts`); ids de ruta inválidos -> 400 `{ error: 'ID inválido' }` (`router.param` + `validateIdParam`); `req.body ?? {}`. Detalle en `references/api-endpoints.md`.

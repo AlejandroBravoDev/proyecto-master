@@ -22,7 +22,8 @@ Controla **solo** la apertura (base inicial para dar cambio) y el cierre (conteo
 3. **Cerrar caja archiva comandas**: en la misma transacción `order.updateMany({ where: { active: true }, data: { active: false } })` (todas las activas, no solo las de la sesión) y luego actualiza la sesión.
 4. `initialAmount` y `finalAmount` se **calculan en el backend** a partir de las denominaciones (nunca confíes en un total enviado por el cliente al abrir/cerrar).
 5. `PUT /api/caja/:id` (edición administrativa) cambia montos y notas, **no** los desgloses: tras editarlos, el total y el desglose pueden diferir. Úsalo solo para correcciones.
-6. Auditoría: `openedByUserId` / `closedByUserId` salen del campo `userId` del body (el frontend envía `user.id`). El servidor no lo verifica.
+6. Auditoría: `openedByUserId` / `closedByUserId` salen **siempre del token** (`req.user.id`, rellenado por `authenticate`): el `userId` que pueda venir en el body se **ignora**, así que nadie puede abrir o cerrar la caja a nombre de otro. (El frontend todavía envía `user.id`; es inofensivo.) Si el usuario del token desapareciera entre `authenticate` y el service, la caja responde 401 `INVALID_TOKEN`.
+7. Permisos: abrir, cerrar y consultar (`status`, `history`, `session/:id`) son para **cualquier usuario autenticado**; `PUT /api/caja/:id` (edición administrativa) es solo ADMIN. Un WORKER ve todo el historial de caja (riesgo registrado: `known-issues.md`, R4).
 
 ## Denominaciones
 
@@ -53,12 +54,12 @@ Controla **solo** la apertura (base inicial para dar cambio) y el cierre (conteo
 |---|---|
 | `CajaPage.jsx` | carga `status` + `history(limit 100)` y, si es admin, la lista de usuarios; filtra por texto y por empleado |
 | `CajaStatusBanner.jsx` | banner verde (turno en curso) o gris (caja cerrada + último cierre) con acciones |
-| `OpenCajaModal.jsx` / `CloseCajaModal.jsx` | conteo por denominación con botones rápidos (+/- 5 monedas, +/- 1 billetes). Abrir exige total > 0; cerrar pide `confirmDialog` antes de enviar |
+| `OpenCajaModal.jsx` / `CloseCajaModal.jsx` | conteo por denominación con botones rápidos (+/- 5 monedas, +/- 1 billetes), compartido vía `DenominationCounter.jsx` + `hooks/useDenominationCounts.js`. Abrir exige total > 0; cerrar pide `confirmDialog` antes de enviar |
 | `SessionHistoryTable.jsx` | tabla con `Pagination` (15 por página, en cliente) |
 | `SessionDetailModal.jsx` | desglose de apertura y cierre |
 | `EditCajaSessionModal.jsx` | solo admin: montos y notas (`finalAmount` solo si está cerrada) |
 
-El bloque de conteo de monedas/billetes está **duplicado** en Open y Close; si tocas uno, extrae un componente `DenominationCounter` y úsalo en ambos.
+El bloque de conteo de monedas/billetes es **un solo componente** (`DenominationCounter` + el hook `useDenominationCounts`) usado por Open y Close: cámbialo ahí, no copies el bloque.
 
 ## Cómo integrar un módulo nuevo con la caja
 
