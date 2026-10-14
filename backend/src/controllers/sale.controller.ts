@@ -7,6 +7,7 @@
 
 import { Request, Response } from 'express';
 import { saleService } from '../services/sale.service';
+import { errorDetails, parseId } from '../utils/http.utils';
 
 export class SaleController {
   /**
@@ -18,7 +19,7 @@ export class SaleController {
       const sales = await saleService.getAllSales();
       return res.json(sales);
     } catch (error) {
-      return res.status(500).json({ error: 'Error al obtener las ventas', details: error });
+      return res.status(500).json({ error: 'Error al obtener las ventas', details: errorDetails(error) });
     }
   }
 
@@ -37,7 +38,7 @@ export class SaleController {
 
       return res.json(sale);
     } catch (error) {
-      return res.status(500).json({ error: 'Error al obtener la venta', details: error });
+      return res.status(500).json({ error: 'Error al obtener la venta', details: errorDetails(error) });
     }
   }
 
@@ -47,9 +48,19 @@ export class SaleController {
    */
   async createSale(req: Request, res: Response) {
     try {
-      const { orderId, paymentMethod, tax, discount, items } = req.body;
+      const { orderId, paymentMethod, tax, discount, items } = req.body ?? {};
 
-      const sale = await saleService.createSale({ orderId, paymentMethod, tax, discount, items });
+      // orderId vacío (undefined, null o '') significa "venta directa con items"
+      let parsedOrderId: number | undefined;
+      if (orderId !== undefined && orderId !== null && orderId !== '') {
+        const parsed = parseId(orderId);
+        if (parsed === null) {
+          return res.status(400).json({ error: 'orderId inválido' });
+        }
+        parsedOrderId = parsed;
+      }
+
+      const sale = await saleService.createSale({ orderId: parsedOrderId, paymentMethod, tax, discount, items });
       return res.status(201).json(sale);
     } catch (error: any) {
       if (error.message === 'ORDER_NOT_FOUND') {
@@ -58,10 +69,22 @@ export class SaleController {
       if (error.message === 'INVALID_PAYLOAD') {
         return res.status(400).json({ error: 'Se debe proporcionar orderId o la lista de ítems' });
       }
+      if (error.message?.startsWith('PRODUCT_NOT_FOUND:')) {
+        return res.status(400).json({ error: `Producto ID ${error.message.split(':')[1]} no encontrado` });
+      }
+      if (error.message === 'INVALID_ITEM') {
+        return res.status(400).json({ error: 'Cada ítem debe tener un productId válido, una cantidad entera mayor a 0 y un precio mayor o igual a 0' });
+      }
+      if (error.message === 'INVALID_AMOUNT') {
+        return res.status(400).json({ error: 'El impuesto y el descuento deben ser números mayores o iguales a 0' });
+      }
+      if (error.message === 'INVALID_PAYMENT_METHOD') {
+        return res.status(400).json({ error: 'Forma de pago inválida. Use CASH, CARD, TRANSFER o MIXED' });
+      }
       if (error.code === 'P2002') {
         return res.status(400).json({ error: 'Esta comanda ya ha sido facturada previamente' });
       }
-      return res.status(500).json({ error: 'Error al facturar la venta', details: error.message || error });
+      return res.status(500).json({ error: 'Error al facturar la venta', details: errorDetails(error) });
     }
   }
 }

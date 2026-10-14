@@ -8,6 +8,8 @@
 
 import prisma from '../prisma/client';
 import { PaymentMethod } from '@prisma/client';
+import { nextInvoiceNumber } from '../utils/sequence.utils';
+import { assertValidItems, normalizeAmount, normalizePaymentMethod } from '../utils/sale.utils';
 
 export class SaleService {
   /**
@@ -49,6 +51,8 @@ export class SaleService {
 
   /**
    * Emite una factura a partir de una comanda existente o venta directa.
+   * Códigos de error: ORDER_NOT_FOUND, PRODUCT_NOT_FOUND:<id>, INVALID_PAYLOAD, INVALID_ITEM,
+   * INVALID_AMOUNT, INVALID_PAYMENT_METHOD.
    * @param data ID de la comanda u orden, forma de pago, impuestos y descuentos
    */
   async createSale(data: {
@@ -58,6 +62,10 @@ export class SaleService {
     discount?: number;
     items?: Array<{ productId: number; quantity: number; unitPrice?: number }>;
   }) {
+    const paymentMethod = normalizePaymentMethod(data.paymentMethod);
+    const calculatedTax = normalizeAmount(data.tax);
+    const calculatedDiscount = normalizeAmount(data.discount);
+
     let subtotal = 0;
     const saleDetailsData: any[] = [];
 
@@ -82,9 +90,11 @@ export class SaleService {
           subtotal: detail.subtotal
         });
       }
-    } 
+    }
     // Caso 2: Venta directa en caja sin crear comanda previa
     else if (data.items && Array.isArray(data.items) && data.items.length > 0) {
+      assertValidItems(data.items);
+
       for (const item of data.items) {
         const prodId = Number(item.productId);
         const qty = Number(item.quantity);
@@ -95,6 +105,9 @@ export class SaleService {
         }
 
         const unitPrice = Number(item.unitPrice ?? product.salePrice);
+        if (!Number.isFinite(unitPrice) || unitPrice < 0) {
+          throw new Error('INVALID_ITEM');
+        }
         const itemSubtotal = unitPrice * qty;
         subtotal += itemSubtotal;
 
@@ -109,35 +122,12 @@ export class SaleService {
       throw new Error('INVALID_PAYLOAD');
     }
 
-    // Calcular impuestos, descuentos y total neto a cobrar
-    const calculatedTax = Number(data.tax || 0);
-    const calculatedDiscount = Number(data.discount || 0);
+    // Calcular el total neto a cobrar
     const total = subtotal + calculatedTax - calculatedDiscount;
 
     return prisma.$transaction(async (tx) => {
       // Generación segura y libre de colisiones de invoiceNumber (INV-YYYY-XXXX)
-      const currentYear = new Date().getFullYear();
-      const lastSale = await tx.sale.findFirst({
-        orderBy: { id: 'desc' },
-        select: { id: true, invoiceNumber: true }
-      });
-
-      let nextSaleSeq = (lastSale?.id ?? 0) + 1;
-      if (lastSale?.invoiceNumber) {
-        const match = lastSale.invoiceNumber.match(/(\d+)$/);
-        if (match) {
-          const lastNum = parseInt(match[1], 10);
-          if (!isNaN(lastNum)) {
-            nextSaleSeq = Math.max(nextSaleSeq, lastNum + 1);
-          }
-        }
-      }
-
-      let invoiceNumber = `INV-${currentYear}-${nextSaleSeq.toString().padStart(4, '0')}`;
-      while (await tx.sale.findUnique({ where: { invoiceNumber } })) {
-        nextSaleSeq++;
-        invoiceNumber = `INV-${currentYear}-${nextSaleSeq.toString().padStart(4, '0')}`;
-      }
+      const invoiceNumber = await nextInvoiceNumber(tx);
 
       return tx.sale.create({
         data: {
@@ -147,7 +137,7 @@ export class SaleService {
           tax: calculatedTax,
           discount: calculatedDiscount,
           total,
-          paymentMethod: data.paymentMethod || 'CASH',
+          paymentMethod,
           saleDetails: {
             create: saleDetailsData
           }
