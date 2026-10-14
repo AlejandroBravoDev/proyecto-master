@@ -1,7 +1,44 @@
 import fs from 'fs';
 import path from 'path';
+import crypto from 'crypto';
 import Database from 'better-sqlite3';
-import { hashPassword } from '../utils/auth.utils';
+import { hashPassword, isValidPassword } from '../utils/auth.utils';
+
+/** Contraseña con la que se siembra el Admin FUERA de producción (las pruebas dependen de ella). */
+export const DEV_ADMIN_PASSWORD = '123456';
+
+export interface AdminInitialPassword {
+  /** Contraseña en claro con la que se creará el Admin. */
+  password: string;
+  /** true si la generamos al azar porque faltaba ADMIN_INITIAL_PASSWORD en producción. */
+  generated: boolean;
+  /** Aviso a mostrar en el log (p. ej. variable definida pero demasiado corta). */
+  warning?: string;
+}
+
+/**
+ * Decide la contraseña del Admin que se siembra cuando NO existe ningún Admin.
+ *  - ADMIN_INITIAL_PASSWORD definida (>= 6 caracteres): se usa tal cual.
+ *  - Falta y NODE_ENV=production: contraseña aleatoria fuerte (se imprime una vez en el log de arranque).
+ *  - Falta fuera de producción (dev/test): `123456`, como siempre.
+ */
+export function resolveAdminInitialPassword(env: NodeJS.ProcessEnv = process.env): AdminInitialPassword {
+  const isProduction = env.NODE_ENV === 'production';
+  const configured = env.ADMIN_INITIAL_PASSWORD;
+  let warning: string | undefined;
+
+  if (configured !== undefined && configured.trim() !== '') {
+    if (isValidPassword(configured)) {
+      return { password: configured, generated: false };
+    }
+    warning = 'ADMIN_INITIAL_PASSWORD tiene menos de 6 caracteres y se ignora.';
+  }
+
+  if (isProduction) {
+    return { password: crypto.randomBytes(18).toString('base64url'), generated: true, warning };
+  }
+  return { password: DEV_ADMIN_PASSWORD, generated: false, warning };
+}
 
 const INITIAL_SCHEMA_SQL = `
 CREATE TABLE IF NOT EXISTS "categories" (
@@ -178,16 +215,20 @@ CREATE INDEX IF NOT EXISTS "inventory_movements_ingredient_id_idx" ON "inventory
 CREATE INDEX IF NOT EXISTS "inventory_movements_date_idx" ON "inventory_movements"("date");
 `;
 
-export async function initializeDatabase(): Promise<void> {
-  const dbPath = process.env.SQLITE_DB_PATH ||
-    (process.env.DATABASE_URL ? process.env.DATABASE_URL.replace(/^file:/, '') : path.resolve(process.cwd(), 'prisma/dev.db'));
+/**
+ * Crea/actualiza la BD SQLite (migraciones + Admin + datos de ejemplo + backup diario).
+ * `env` solo se inyecta en pruebas; en ejecución normal se usa process.env.
+ */
+export async function initializeDatabase(env: NodeJS.ProcessEnv = process.env): Promise<void> {
+  const dbPath = env.SQLITE_DB_PATH ||
+    (env.DATABASE_URL ? env.DATABASE_URL.replace(/^file:/, '') : path.resolve(process.cwd(), 'prisma/dev.db'));
 
   const dbDir = path.dirname(dbPath);
   if (!fs.existsSync(dbDir)) {
     fs.mkdirSync(dbDir, { recursive: true });
   }
 
-  const backupDir = process.env.SQLITE_BACKUP_DIR || path.join(dbDir, '..', 'backups');
+  const backupDir = env.SQLITE_BACKUP_DIR || path.join(dbDir, '..', 'backups');
   if (!fs.existsSync(backupDir)) {
     fs.mkdirSync(backupDir, { recursive: true });
   }
@@ -282,14 +323,29 @@ export async function initializeDatabase(): Promise<void> {
       mig002Tx();
     }
 
-    // 4. Sembrar Administrador por defecto obligatorio si no existe
+    // 4. Sembrar Administrador por defecto obligatorio si no existe.
+    //    La contraseña sale de ADMIN_INITIAL_PASSWORD; en producción, sin la variable, es aleatoria
+    //    y se imprime UNA sola vez (aquí, al crear el usuario). Fuera de producción: 123456.
     const adminUser = db.prepare('SELECT id FROM users WHERE lower(username) = lower(?)').get('Admin');
     if (!adminUser) {
-      const adminHash = hashPassword('123456');
+      const initial = resolveAdminInitialPassword(env);
+      const adminHash = hashPassword(initial.password);
       db.prepare(`
         INSERT INTO users (full_name, username, password_hash, role, active, joined_at, created_at, updated_at)
         VALUES (?, ?, ?, 'ADMIN', 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
       `).run('Administrador', 'Admin', adminHash);
+
+      if (initial.warning) {
+        console.warn(`[Seguridad] ${initial.warning}`);
+      }
+      if (initial.generated) {
+        console.warn('[Seguridad] ================================================================');
+        console.warn('[Seguridad] Se creó el usuario "Admin" y ADMIN_INITIAL_PASSWORD no está definida:');
+        console.warn(`[Seguridad] contraseña inicial GENERADA: ${initial.password}`);
+        console.warn('[Seguridad] Guárdala ahora: NO se volverá a mostrar. Cámbiala en Usuarios');
+        console.warn('[Seguridad] o define ADMIN_INITIAL_PASSWORD antes del primer arranque.');
+        console.warn('[Seguridad] ================================================================');
+      }
     }
 
     // 5. Backup diario
