@@ -11,5 +11,6 @@ export const PRODUCT_ENDPOINTS = {
   get CATEGORIES() { return `${getApiBaseUrl()}/api/categories`; },
   CATEGORY_DETAIL: (id) => `${getApiBaseUrl()}/api/categories/${id}`,
   get INGREDIENTS() { return `${getApiBaseUrl()}/api/ingredients`; },
+  get RECIPES() { return `${getApiBaseUrl()}/api/recipes`; },
 };
 

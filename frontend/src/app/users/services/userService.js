@@ -1,19 +1,5 @@
+import { requestJson } from '../../../config/apiFetch';
 import { USER_ENDPOINTS } from './endpoints';
-
-/**
- * Extracts clear error message from backend error responses.
- */
-function extractErrorMessage(errorData, fallbackMessage) {
-  if (!errorData) return fallbackMessage;
-  const baseMsg = errorData.error || errorData.message || fallbackMessage;
-  if (errorData.details) {
-    const detailsMsg = typeof errorData.details === 'object'
-      ? JSON.stringify(errorData.details)
-      : String(errorData.details);
-    return `${baseMsg}: ${detailsMsg}`;
-  }
-  return baseMsg;
-}
 
 /**
  * Fetches all users / workers with pagination.
@@ -22,19 +8,12 @@ function extractErrorMessage(errorData, fallbackMessage) {
  * @returns {Promise<{ total: number, page: number, totalPages: number, users: Array }>}
  */
 export async function fetchUsers(page = 1, limit = 15) {
-  const response = await fetch(`${USER_ENDPOINTS.USERS()}?page=${page}&limit=${limit}`, {
-    method: 'GET',
-    headers: {
-      'Accept': 'application/json',
-    },
-  });
+  const data = await requestJson(
+    `${USER_ENDPOINTS.USERS()}?page=${page}&limit=${limit}`,
+    {},
+    'No se pudieron cargar los usuarios.'
+  );
 
-  if (!response.ok) {
-    const errorData = await response.json().catch(() => ({}));
-    throw new Error(extractErrorMessage(errorData, `Error (${response.status}): No se pudieron cargar los usuarios.`));
-  }
-
-  const data = await response.json();
   if (Array.isArray(data)) {
     return {
       total: data.length,
@@ -52,22 +31,8 @@ export async function fetchUsers(page = 1, limit = 15) {
  * @param {{ fullName: string, username: string, password: string, role?: string, joinedAt?: string }} data
  * @returns {Promise<Object>}
  */
-export async function createUser(data) {
-  const response = await fetch(USER_ENDPOINTS.USERS(), {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'Accept': 'application/json',
-    },
-    body: JSON.stringify(data),
-  });
-
-  if (!response.ok) {
-    const errorData = await response.json().catch(() => ({}));
-    throw new Error(extractErrorMessage(errorData, `Error (${response.status}): No se pudo crear el usuario.`));
-  }
-
-  return response.json();
+export function createUser(data) {
+  return requestJson(USER_ENDPOINTS.USERS(), { method: 'POST', body: data }, 'No se pudo crear el usuario.');
 }
 
 /**
@@ -76,22 +41,8 @@ export async function createUser(data) {
  * @param {{ fullName?: string, username?: string, role?: string, joinedAt?: string, active?: boolean }} data
  * @returns {Promise<Object>}
  */
-export async function updateUser(id, data) {
-  const response = await fetch(USER_ENDPOINTS.USER_DETAIL(id), {
-    method: 'PUT',
-    headers: {
-      'Content-Type': 'application/json',
-      'Accept': 'application/json',
-    },
-    body: JSON.stringify(data),
-  });
-
-  if (!response.ok) {
-    const errorData = await response.json().catch(() => ({}));
-    throw new Error(extractErrorMessage(errorData, `Error (${response.status}): No se pudo actualizar el usuario.`));
-  }
-
-  return response.json();
+export function updateUser(id, data) {
+  return requestJson(USER_ENDPOINTS.USER_DETAIL(id), { method: 'PUT', body: data }, 'No se pudo actualizar el usuario.');
 }
 
 /**
@@ -100,22 +51,12 @@ export async function updateUser(id, data) {
  * @param {string} password
  * @returns {Promise<Object>}
  */
-export async function updateUserPassword(id, password) {
-  const response = await fetch(USER_ENDPOINTS.USER_PASSWORD(id), {
-    method: 'PATCH',
-    headers: {
-      'Content-Type': 'application/json',
-      'Accept': 'application/json',
-    },
-    body: JSON.stringify({ password }),
-  });
-
-  if (!response.ok) {
-    const errorData = await response.json().catch(() => ({}));
-    throw new Error(extractErrorMessage(errorData, `Error (${response.status}): No se pudo actualizar la contraseña.`));
-  }
-
-  return response.json();
+export function updateUserPassword(id, password) {
+  return requestJson(
+    USER_ENDPOINTS.USER_PASSWORD(id),
+    { method: 'PATCH', body: { password } },
+    'No se pudo actualizar la contraseña.'
+  );
 }
 
 /**
@@ -124,20 +65,10 @@ export async function updateUserPassword(id, password) {
  * @param {boolean} active
  * @returns {Promise<Object>}
  */
-export async function updateUserStatus(id, active) {
-  const response = await fetch(USER_ENDPOINTS.USER_STATUS(id), {
-    method: 'PATCH',
-    headers: {
-      'Content-Type': 'application/json',
-      'Accept': 'application/json',
-    },
-    body: JSON.stringify({ active }),
-  });
-
-  if (!response.ok) {
-    const errorData = await response.json().catch(() => ({}));
-    throw new Error(extractErrorMessage(errorData, `Error (${response.status}): No se pudo cambiar el estado del usuario.`));
-  }
-
-  return response.json();
+export function updateUserStatus(id, active) {
+  return requestJson(
+    USER_ENDPOINTS.USER_STATUS(id),
+    { method: 'PATCH', body: { active } },
+    'No se pudo cambiar el estado del usuario.'
+  );
 }

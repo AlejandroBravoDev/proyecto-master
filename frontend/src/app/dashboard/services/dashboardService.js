@@ -3,10 +3,12 @@
  * Handles real API data fetching for the dashboard module using centralized endpoints.
  */
 
+import { requestJson } from '../../../config/apiFetch';
 import { DASHBOARD_ENDPOINTS } from './endpoints';
 
 /**
  * Fetches real KPI metrics, top selling products and critical stock filtered by period.
+ * Cards carry only data that comes from the backend (no invented trends).
  * @param {'day'|'month'|'year'} period - Filter period: 'day', 'month', or 'year'. Defaults to 'day'.
  * @returns {Promise<{
  *   period: string,
@@ -18,19 +20,7 @@ import { DASHBOARD_ENDPOINTS } from './endpoints';
 export async function fetchDashboardKPIs(period = 'day') {
   const url = `${DASHBOARD_ENDPOINTS.KPIS}?period=${encodeURIComponent(period)}`;
 
-  const response = await fetch(url, {
-    method: 'GET',
-    headers: {
-      'Content-Type': 'application/json',
-      'Accept': 'application/json',
-    },
-  });
-
-  if (!response.ok) {
-    throw new Error(`Error en el servidor (${response.status}): No se pudieron obtener los KPIs.`);
-  }
-
-  const kpis = await response.json();
+  const kpis = await requestJson(url, {}, 'No se pudieron obtener los KPIs.');
 
   return {
     period: kpis.period || period,

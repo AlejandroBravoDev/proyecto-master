@@ -4,25 +4,15 @@
  * template downloading, report exporting, and bulk Excel importing.
  */
 
+import { requestBlob, requestJson } from '../../../config/apiFetch';
 import { INVENTORY_ENDPOINTS } from './endpoints';
 
 /**
  * Fetches the list of all ingredients.
  * @returns {Promise<Array>}
  */
-export async function fetchIngredients() {
-  const response = await fetch(INVENTORY_ENDPOINTS.INGREDIENTS, {
-    method: 'GET',
-    headers: {
-      'Accept': 'application/json',
-    },
-  });
-
-  if (!response.ok) {
-    throw new Error(`Error (${response.status}): No se pudieron cargar los insumos.`);
-  }
-
-  return response.json();
+export function fetchIngredients() {
+  return requestJson(INVENTORY_ENDPOINTS.INGREDIENTS, {}, 'No se pudieron cargar los insumos.');
 }
 
 /**
@@ -30,19 +20,8 @@ export async function fetchIngredients() {
  * @param {number|string} id
  * @returns {Promise<Object>}
  */
-export async function fetchIngredientDetail(id) {
-  const response = await fetch(INVENTORY_ENDPOINTS.INGREDIENT_DETAIL(id), {
-    method: 'GET',
-    headers: {
-      'Accept': 'application/json',
-    },
-  });
-
-  if (!response.ok) {
-    throw new Error(`Error (${response.status}): No se pudo obtener el detalle del insumo.`);
-  }
-
-  return response.json();
+export function fetchIngredientDetail(id) {
+  return requestJson(INVENTORY_ENDPOINTS.INGREDIENT_DETAIL(id), {}, 'No se pudo obtener el detalle del insumo.');
 }
 
 /**
@@ -50,22 +29,8 @@ export async function fetchIngredientDetail(id) {
  * @param {{name: string, description?: string, measurementUnit: string, currentStock?: number, minimumStock?: number, unitCost?: number}} data
  * @returns {Promise<Object>}
  */
-export async function createIngredient(data) {
-  const response = await fetch(INVENTORY_ENDPOINTS.INGREDIENTS, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'Accept': 'application/json',
-    },
-    body: JSON.stringify(data),
-  });
-
-  if (!response.ok) {
-    const errorData = await response.json().catch(() => ({}));
-    throw new Error(errorData.error || `Error (${response.status}): No se pudo crear el insumo.`);
-  }
-
-  return response.json();
+export function createIngredient(data) {
+  return requestJson(INVENTORY_ENDPOINTS.INGREDIENTS, { method: 'POST', body: data }, 'No se pudo crear el insumo.');
 }
 
 /**
@@ -74,22 +39,8 @@ export async function createIngredient(data) {
  * @param {Object} data
  * @returns {Promise<Object>}
  */
-export async function updateIngredient(id, data) {
-  const response = await fetch(INVENTORY_ENDPOINTS.INGREDIENT_DETAIL(id), {
-    method: 'PUT',
-    headers: {
-      'Content-Type': 'application/json',
-      'Accept': 'application/json',
-    },
-    body: JSON.stringify(data),
-  });
-
-  if (!response.ok) {
-    const errorData = await response.json().catch(() => ({}));
-    throw new Error(errorData.error || `Error (${response.status}): No se pudo actualizar el insumo.`);
-  }
-
-  return response.json();
+export function updateIngredient(id, data) {
+  return requestJson(INVENTORY_ENDPOINTS.INGREDIENT_DETAIL(id), { method: 'PUT', body: data }, 'No se pudo actualizar el insumo.');
 }
 
 /**
@@ -97,39 +48,16 @@ export async function updateIngredient(id, data) {
  * @param {number|string} id
  * @returns {Promise<Object>}
  */
-export async function deleteIngredient(id) {
-  const response = await fetch(INVENTORY_ENDPOINTS.INGREDIENT_DETAIL(id), {
-    method: 'DELETE',
-    headers: {
-      'Accept': 'application/json',
-    },
-  });
-
-  if (!response.ok) {
-    const errorData = await response.json().catch(() => ({}));
-    throw new Error(errorData.error || `Error (${response.status}): No se pudo eliminar el insumo.`);
-  }
-
-  return response.json();
+export function deleteIngredient(id) {
+  return requestJson(INVENTORY_ENDPOINTS.INGREDIENT_DETAIL(id), { method: 'DELETE' }, 'No se pudo eliminar el insumo.');
 }
 
 /**
  * Fetches critical stock alert ingredients.
  * @returns {Promise<Array>}
  */
-export async function fetchInventoryAlerts() {
-  const response = await fetch(INVENTORY_ENDPOINTS.ALERTS, {
-    method: 'GET',
-    headers: {
-      'Accept': 'application/json',
-    },
-  });
-
-  if (!response.ok) {
-    throw new Error(`Error (${response.status}): No se pudieron obtener las alertas de inventario.`);
-  }
-
-  return response.json();
+export function fetchInventoryAlerts() {
+  return requestJson(INVENTORY_ENDPOINTS.ALERTS, {}, 'No se pudieron obtener las alertas de inventario.');
 }
 
 /**
@@ -137,71 +65,54 @@ export async function fetchInventoryAlerts() {
  * @param {{ingredientId?: number|string, type?: 'IN'|'OUT'|'ADJUSTMENT', reason?: string}} filters
  * @returns {Promise<Array>}
  */
-export async function fetchInventoryMovements(filters = {}) {
+export function fetchInventoryMovements(filters = {}) {
   const query = new URLSearchParams();
   if (filters.ingredientId) query.append('ingredientId', filters.ingredientId);
   if (filters.type) query.append('type', filters.type);
   if (filters.reason) query.append('reason', filters.reason);
 
   const url = `${INVENTORY_ENDPOINTS.MOVEMENTS}${query.toString() ? `?${query.toString()}` : ''}`;
-  const response = await fetch(url, {
-    method: 'GET',
-    headers: {
-      'Accept': 'application/json',
-    },
-  });
+  return requestJson(url, {}, 'No se pudo obtener el historial de Kardex.');
+}
 
-  if (!response.ok) {
-    throw new Error(`Error (${response.status}): No se pudo obtener el historial de Kardex.`);
-  }
-
-  return response.json();
+/**
+ * Downloads a binary file from the backend and hands it to the browser as a file save.
+ * @param {string} url
+ * @param {string} filename name proposed to the user
+ * @param {string} fallbackMessage generic error text (Spanish, without the "Error (N):" prefix)
+ */
+async function downloadFile(url, filename, fallbackMessage) {
+  const blob = await requestBlob(url, {}, fallbackMessage);
+  const objectUrl = window.URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = objectUrl;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  window.URL.revokeObjectURL(objectUrl);
 }
 
 /**
  * Downloads the Excel template for bulk ingredients upload.
  */
-export async function downloadIngredientsTemplate() {
-  const response = await fetch(INVENTORY_ENDPOINTS.TEMPLATE, {
-    method: 'GET',
-  });
-
-  if (!response.ok) {
-    throw new Error(`Error (${response.status}): No se pudo descargar la plantilla de insumos.`);
-  }
-
-  const blob = await response.blob();
-  const url = window.URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = 'plantilla_carga_ingredientes.xlsx';
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
-  window.URL.revokeObjectURL(url);
+export function downloadIngredientsTemplate() {
+  return downloadFile(
+    INVENTORY_ENDPOINTS.TEMPLATE,
+    'plantilla_carga_ingredientes.xlsx',
+    'No se pudo descargar la plantilla de insumos.'
+  );
 }
 
 /**
  * Downloads the full inventory report in Excel format.
  */
-export async function exportIngredientsReport() {
-  const response = await fetch(INVENTORY_ENDPOINTS.EXPORT, {
-    method: 'GET',
-  });
-
-  if (!response.ok) {
-    throw new Error(`Error (${response.status}): No se pudo exportar el reporte de inventario.`);
-  }
-
-  const blob = await response.blob();
-  const url = window.URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = 'reporte_inventario_ingredientes.xlsx';
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
-  window.URL.revokeObjectURL(url);
+export function exportIngredientsReport() {
+  return downloadFile(
+    INVENTORY_ENDPOINTS.EXPORT,
+    'reporte_inventario_ingredientes.xlsx',
+    'No se pudo exportar el reporte de inventario.'
+  );
 }
 
 /**
@@ -209,20 +120,9 @@ export async function exportIngredientsReport() {
  * @param {File} file
  * @returns {Promise<{message: string, summary: {created: number, updated: number, skipped: number, errors: Array<string>}}>}
  */
-export async function importIngredientsExcel(file) {
+export function importIngredientsExcel(file) {
   const formData = new FormData();
   formData.append('file', file);
 
-  const response = await fetch(INVENTORY_ENDPOINTS.IMPORT, {
-    method: 'POST',
-    body: formData,
-  });
-
-  const data = await response.json().catch(() => ({}));
-
-  if (!response.ok) {
-    throw new Error(data.error || `Error (${response.status}): Falló la importación masiva de insumos.`);
-  }
-
-  return data;
+  return requestJson(INVENTORY_ENDPOINTS.IMPORT, { method: 'POST', body: formData }, 'Falló la importación masiva de insumos.');
 }

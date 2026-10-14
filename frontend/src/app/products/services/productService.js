@@ -3,6 +3,7 @@
  * Handles all HTTP requests for products, categories, recipes and ingredient lookups.
  */
 
+import { requestJson } from '../../../config/apiFetch';
 import { PRODUCT_ENDPOINTS } from './endpoints';
 
 /**
@@ -10,7 +11,7 @@ import { PRODUCT_ENDPOINTS } from './endpoints';
  * @param {{categoryId?: number|string, available?: boolean, productType?: string}} filters
  * @returns {Promise<Array>}
  */
-export async function fetchProducts(filters = {}) {
+export function fetchProducts(filters = {}) {
   const query = new URLSearchParams();
   if (filters.categoryId) query.append('categoryId', filters.categoryId);
   if (filters.available !== undefined && filters.available !== null && filters.available !== '') {
@@ -19,18 +20,7 @@ export async function fetchProducts(filters = {}) {
   if (filters.productType) query.append('productType', filters.productType);
 
   const url = `${PRODUCT_ENDPOINTS.PRODUCTS}${query.toString() ? `?${query.toString()}` : ''}`;
-  const response = await fetch(url, {
-    method: 'GET',
-    headers: {
-      'Accept': 'application/json',
-    },
-  });
-
-  if (!response.ok) {
-    throw new Error(`Error (${response.status}): No se pudieron cargar los productos.`);
-  }
-
-  return response.json();
+  return requestJson(url, {}, 'No se pudieron cargar los productos.');
 }
 
 /**
@@ -38,19 +28,8 @@ export async function fetchProducts(filters = {}) {
  * @param {number|string} id
  * @returns {Promise<Object>}
  */
-export async function fetchProductDetail(id) {
-  const response = await fetch(PRODUCT_ENDPOINTS.PRODUCT_DETAIL(id), {
-    method: 'GET',
-    headers: {
-      'Accept': 'application/json',
-    },
-  });
-
-  if (!response.ok) {
-    throw new Error(`Error (${response.status}): No se pudo obtener el detalle del producto.`);
-  }
-
-  return response.json();
+export function fetchProductDetail(id) {
+  return requestJson(PRODUCT_ENDPOINTS.PRODUCT_DETAIL(id), {}, 'No se pudo obtener el detalle del producto.');
 }
 
 /**
@@ -58,86 +37,59 @@ export async function fetchProductDetail(id) {
  * @param {Object} data
  * @returns {Promise<Object>}
  */
-export async function createProduct(data) {
-  const response = await fetch(PRODUCT_ENDPOINTS.PRODUCTS, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'Accept': 'application/json',
-    },
-    body: JSON.stringify(data),
-  });
-
-  if (!response.ok) {
-    const errorData = await response.json().catch(() => ({}));
-    throw new Error(errorData.error || `Error (${response.status}): No se pudo crear el producto.`);
-  }
-
-  return response.json();
+export function createProduct(data) {
+  return requestJson(PRODUCT_ENDPOINTS.PRODUCTS, { method: 'POST', body: data }, 'No se pudo crear el producto.');
 }
 
 /**
  * Updates basic product properties or toggles availability.
+ * Omitted fields stay unchanged; `description: null` clears the description.
  * @param {number|string} id
  * @param {Object} data
  * @returns {Promise<Object>}
  */
-export async function updateProduct(id, data) {
-  const response = await fetch(PRODUCT_ENDPOINTS.PRODUCT_DETAIL(id), {
-    method: 'PUT',
-    headers: {
-      'Content-Type': 'application/json',
-      'Accept': 'application/json',
-    },
-    body: JSON.stringify(data),
-  });
-
-  if (!response.ok) {
-    const errorData = await response.json().catch(() => ({}));
-    throw new Error(errorData.error || `Error (${response.status}): No se pudo actualizar el producto.`);
-  }
-
-  return response.json();
+export function updateProduct(id, data) {
+  return requestJson(PRODUCT_ENDPOINTS.PRODUCT_DETAIL(id), { method: 'PUT', body: data }, 'No se pudo actualizar el producto.');
 }
 
 /**
- * Deletes a product by ID.
+ * Deletes a product by ID. The backend answers 400 (with a Spanish message) when the product
+ * already has order/sale history: in that case it must be deactivated instead of deleted.
  * @param {number|string} id
  * @returns {Promise<Object>}
  */
-export async function deleteProduct(id) {
-  const response = await fetch(PRODUCT_ENDPOINTS.PRODUCT_DETAIL(id), {
-    method: 'DELETE',
-    headers: {
-      'Accept': 'application/json',
+export function deleteProduct(id) {
+  return requestJson(PRODUCT_ENDPOINTS.PRODUCT_DETAIL(id), { method: 'DELETE' }, 'No se pudo eliminar el producto.');
+}
+
+/**
+ * Creates or REPLACES the recipe of an already created product (POST /api/recipes is an upsert:
+ * the previous ingredient list is replaced by the one sent; an empty list leaves the recipe empty).
+ * @param {number|string} productId
+ * @param {{ name?: string, ingredients: Array<{ ingredientId: number, quantity: number, measurementUnit: string }> }} recipe
+ * @returns {Promise<Object>}
+ */
+export function saveProductRecipe(productId, recipe) {
+  return requestJson(
+    PRODUCT_ENDPOINTS.RECIPES,
+    {
+      method: 'POST',
+      body: {
+        productId: Number(productId),
+        ...(recipe.name ? { name: recipe.name } : {}),
+        ingredients: recipe.ingredients,
+      },
     },
-  });
-
-  if (!response.ok) {
-    const errorData = await response.json().catch(() => ({}));
-    throw new Error(errorData.error || `Error (${response.status}): No se pudo eliminar el producto.`);
-  }
-
-  return response.json();
+    'No se pudo guardar la receta del producto.'
+  );
 }
 
 /**
  * Fetches all menu categories.
  * @returns {Promise<Array>}
  */
-export async function fetchCategories() {
-  const response = await fetch(PRODUCT_ENDPOINTS.CATEGORIES, {
-    method: 'GET',
-    headers: {
-      'Accept': 'application/json',
-    },
-  });
-
-  if (!response.ok) {
-    throw new Error(`Error (${response.status}): No se pudieron cargar las categorías.`);
-  }
-
-  return response.json();
+export function fetchCategories() {
+  return requestJson(PRODUCT_ENDPOINTS.CATEGORIES, {}, 'No se pudieron cargar las categorías.');
 }
 
 /**
@@ -145,43 +97,18 @@ export async function fetchCategories() {
  * @param {{name: string, description?: string}} data
  * @returns {Promise<Object>}
  */
-export async function createCategory(data) {
-  const response = await fetch(PRODUCT_ENDPOINTS.CATEGORIES, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'Accept': 'application/json',
-    },
-    body: JSON.stringify(data),
-  });
-
-  if (!response.ok) {
-    const errorData = await response.json().catch(() => ({}));
-    throw new Error(errorData.error || `Error (${response.status}): No se pudo crear la categoría.`);
-  }
-
-  return response.json();
+export function createCategory(data) {
+  return requestJson(PRODUCT_ENDPOINTS.CATEGORIES, { method: 'POST', body: data }, 'No se pudo crear la categoría.');
 }
 
 /**
- * Deletes a category by ID.
+ * Deletes a category by ID. The backend answers 400 (with a Spanish message) when the category
+ * still has products: they must be moved or removed first.
  * @param {number|string} id
  * @returns {Promise<Object>}
  */
-export async function deleteCategory(id) {
-  const response = await fetch(PRODUCT_ENDPOINTS.CATEGORY_DETAIL(id), {
-    method: 'DELETE',
-    headers: {
-      'Accept': 'application/json',
-    },
-  });
-
-  if (!response.ok) {
-    const errorData = await response.json().catch(() => ({}));
-    throw new Error(errorData.error || `Error (${response.status}): No se pudo eliminar la categoría.`);
-  }
-
-  return response.json();
+export function deleteCategory(id) {
+  return requestJson(PRODUCT_ENDPOINTS.CATEGORY_DETAIL(id), { method: 'DELETE' }, 'No se pudo eliminar la categoría.');
 }
 
 /**
@@ -189,18 +116,7 @@ export async function deleteCategory(id) {
  * @param {string} [searchTerm='']
  * @returns {Promise<Array>}
  */
-export async function fetchIngredientsForRecipe(searchTerm = '') {
+export function fetchIngredientsForRecipe(searchTerm = '') {
   const query = searchTerm ? `?search=${encodeURIComponent(searchTerm)}` : '';
-  const response = await fetch(`${PRODUCT_ENDPOINTS.INGREDIENTS}${query}`, {
-    method: 'GET',
-    headers: {
-      'Accept': 'application/json',
-    },
-  });
-
-  if (!response.ok) {
-    throw new Error(`Error (${response.status}): No se pudieron cargar los insumos de bodega.`);
-  }
-
-  return response.json();
+  return requestJson(`${PRODUCT_ENDPOINTS.INGREDIENTS}${query}`, {}, 'No se pudieron cargar los insumos de bodega.');
 }

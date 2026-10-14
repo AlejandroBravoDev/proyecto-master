@@ -4,6 +4,7 @@
  * and menu lookups for the POS order taking interface.
  */
 
+import { requestJson } from '../../../config/apiFetch';
 import { ORDER_ENDPOINTS } from './endpoints';
 
 /**
@@ -12,7 +13,7 @@ import { ORDER_ENDPOINTS } from './endpoints';
  * @param {{ scope?: 'active'|'all', date?: string }} [filters]
  * @returns {Promise<Array>}
  */
-export async function fetchOrders(filters = { scope: 'active' }) {
+export function fetchOrders(filters = { scope: 'active' }) {
   const params = new URLSearchParams();
   if (filters?.date) {
     params.set('date', filters.date);
@@ -20,37 +21,15 @@ export async function fetchOrders(filters = { scope: 'active' }) {
     params.set('scope', filters?.scope || 'active');
   }
 
-  const response = await fetch(`${ORDER_ENDPOINTS.ORDERS}?${params.toString()}`, {
-    method: 'GET',
-    headers: {
-      'Accept': 'application/json',
-    },
-  });
-
-  if (!response.ok) {
-    throw new Error(`Error (${response.status}): No se pudieron cargar las comandas.`);
-  }
-
-  return response.json();
+  return requestJson(`${ORDER_ENDPOINTS.ORDERS}?${params.toString()}`, {}, 'No se pudieron cargar las comandas.');
 }
 
 /**
  * Fetches the current cash register status to validate before creating orders.
  * @returns {Promise<{ isOpen: boolean, activeSession: Object|null }>}
  */
-export async function fetchCajaStatusForOrders() {
-  const response = await fetch(ORDER_ENDPOINTS.CAJA_STATUS, {
-    method: 'GET',
-    headers: {
-      'Accept': 'application/json',
-    },
-  });
-
-  if (!response.ok) {
-    throw new Error(`Error (${response.status}): No se pudo verificar el estado de la caja.`);
-  }
-
-  return response.json();
+export function fetchCajaStatusForOrders() {
+  return requestJson(ORDER_ENDPOINTS.CAJA_STATUS, {}, 'No se pudo verificar el estado de la caja.');
 }
 
 /**
@@ -58,60 +37,22 @@ export async function fetchCajaStatusForOrders() {
  * @param {number|string} id
  * @returns {Promise<Object>}
  */
-export async function fetchOrderById(id) {
-  const response = await fetch(ORDER_ENDPOINTS.ORDER_DETAIL(id), {
-    method: 'GET',
-    headers: {
-      'Accept': 'application/json',
-    },
-  });
-
-  if (!response.ok) {
-    throw new Error(`Error (${response.status}): No se pudo obtener la comanda.`);
-  }
-
-  return response.json();
-}
-
-/**
- * Helper to extract clear error messages with details from backend response.
- */
-function extractErrorMessage(errorData, fallbackMessage) {
-  if (!errorData) return fallbackMessage;
-  const baseMsg = errorData.error || errorData.message || fallbackMessage;
-  if (errorData.details) {
-    const detailsMsg = typeof errorData.details === 'object'
-      ? JSON.stringify(errorData.details)
-      : String(errorData.details);
-    return `${baseMsg}: ${detailsMsg}`;
-  }
-  return baseMsg;
+export function fetchOrderById(id) {
+  return requestJson(ORDER_ENDPOINTS.ORDER_DETAIL(id), {}, 'No se pudo obtener la comanda.');
 }
 
 /**
  * Creates a new order and triggers automatic warehouse inventory deduction.
+ * The backend answers 400 with the reason in `error` (closed cash register, unavailable product,
+ * insufficient stock...): that exact text is thrown so the UI can show it.
  * @param {{
  *   items: Array<{ productId: number, quantity: number, unitPrice?: number, notes?: string }>,
  *   notes?: string
  * }} data
  * @returns {Promise<Object>}
  */
-export async function createOrder(data) {
-  const response = await fetch(ORDER_ENDPOINTS.ORDERS, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'Accept': 'application/json',
-    },
-    body: JSON.stringify(data),
-  });
-
-  if (!response.ok) {
-    const errorData = await response.json().catch(() => ({}));
-    throw new Error(extractErrorMessage(errorData, `Error (${response.status}): No se pudo crear la comanda.`));
-  }
-
-  return response.json();
+export function createOrder(data) {
+  return requestJson(ORDER_ENDPOINTS.ORDERS, { method: 'POST', body: data }, 'No se pudo crear la comanda.');
 }
 
 /**
@@ -119,56 +60,22 @@ export async function createOrder(data) {
  * @param {number|string} id
  * @returns {Promise<Object>}
  */
-export async function deleteOrder(id) {
-  const response = await fetch(ORDER_ENDPOINTS.ORDER_DETAIL(id), {
-    method: 'DELETE',
-    headers: {
-      'Accept': 'application/json',
-    },
-  });
-
-  if (!response.ok) {
-    const errorData = await response.json().catch(() => ({}));
-    throw new Error(extractErrorMessage(errorData, `Error (${response.status}): No se pudo eliminar la comanda.`));
-  }
-
-  return response.json();
+export function deleteOrder(id) {
+  return requestJson(ORDER_ENDPOINTS.ORDER_DETAIL(id), { method: 'DELETE' }, 'No se pudo eliminar la comanda.');
 }
 
 /**
  * Fetches available products for placing orders.
  * @returns {Promise<Array>}
  */
-export async function fetchProductsForOrders() {
-  const response = await fetch(`${ORDER_ENDPOINTS.PRODUCTS}?available=true`, {
-    method: 'GET',
-    headers: {
-      'Accept': 'application/json',
-    },
-  });
-
-  if (!response.ok) {
-    throw new Error(`Error (${response.status}): No se pudieron cargar los productos disponibles.`);
-  }
-
-  return response.json();
+export function fetchProductsForOrders() {
+  return requestJson(`${ORDER_ENDPOINTS.PRODUCTS}?available=true`, {}, 'No se pudieron cargar los productos disponibles.');
 }
 
 /**
  * Fetches menu categories for POS order navigation.
  * @returns {Promise<Array>}
  */
-export async function fetchCategoriesForOrders() {
-  const response = await fetch(ORDER_ENDPOINTS.CATEGORIES, {
-    method: 'GET',
-    headers: {
-      'Accept': 'application/json',
-    },
-  });
-
-  if (!response.ok) {
-    throw new Error(`Error (${response.status}): No se pudieron cargar las categorías.`);
-  }
-
-  return response.json();
+export function fetchCategoriesForOrders() {
+  return requestJson(ORDER_ENDPOINTS.CATEGORIES, {}, 'No se pudieron cargar las categorías.');
 }
