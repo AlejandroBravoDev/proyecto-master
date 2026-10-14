@@ -8,20 +8,11 @@
 
 import { PrismaClient } from '@prisma/client';
 import { PrismaBetterSqlite3 } from '@prisma/adapter-better-sqlite3';
-import path from 'path';
+import { resolveDbPath } from './dbPath';
 
-// 1. Obtener la ruta de la base de datos de manera dinámica (producción en Railway/VPS o desarrollo local)
-const getDatabasePath = (): string => {
-  if (process.env.SQLITE_DB_PATH) {
-    return path.resolve(process.env.SQLITE_DB_PATH);
-  }
-  if (process.env.DATABASE_URL) {
-    return path.resolve(process.env.DATABASE_URL.replace(/^file:/, ''));
-  }
-  return path.resolve(process.cwd(), 'prisma/dev.db');
-};
-
-const dbPath = getDatabasePath();
+// 1. Obtener la ruta de la base de datos (producción en Railway/VPS o desarrollo local).
+//    La resolución vive en dbPath.ts, compartida con init.ts, y no depende del cwd.
+const dbPath = resolveDbPath();
 
 // 2. Inicializar el adaptador de better-sqlite3 con la ruta especificada
 const adapter = new PrismaBetterSqlite3({ url: dbPath });

@@ -3,9 +3,28 @@ import path from 'path';
 import crypto from 'crypto';
 import Database from 'better-sqlite3';
 import { hashPassword, isValidPassword } from '../utils/auth.utils';
+import { resolveDbPath, resolveBackupDir } from './dbPath';
+
+/**
+ * Ids de las migraciones que gestiona `initializeDatabase()`, en orden.
+ * Al añadir una migración nueva en esta función, agrégala también aquí:
+ * se usa para detectar migraciones pendientes y hacer la copia previa.
+ */
+export const MIGRATION_IDS = ['001_initial_schema', '002_users_auth_and_session_orders'] as const;
 
 /** Contraseña con la que se siembra el Admin FUERA de producción (las pruebas dependen de ella). */
 export const DEV_ADMIN_PASSWORD = '123456';
+
+/** Migraciones de `MIGRATION_IDS` que todavía no figuran como aplicadas. */
+export function getPendingMigrations(applied: Iterable<string>): string[] {
+  const done = new Set(applied);
+  return MIGRATION_IDS.filter((id) => !done.has(id));
+}
+
+/** Nombre de la copia previa a una migración, p. ej. `pre-migration-2026-10-13T18-20-11-123Z.db`. */
+export function preMigrationBackupName(now: Date = new Date()): string {
+  return `pre-migration-${now.toISOString().replace(/[:.]/g, '-')}.db`;
+}
 
 export interface AdminInitialPassword {
   /** Contraseña en claro con la que se creará el Admin. */
@@ -218,17 +237,17 @@ CREATE INDEX IF NOT EXISTS "inventory_movements_date_idx" ON "inventory_movement
 /**
  * Crea/actualiza la BD SQLite (migraciones + Admin + datos de ejemplo + backup diario).
  * `env` solo se inyecta en pruebas; en ejecución normal se usa process.env.
+ * Lanza si algo falla: el llamador (server.ts) debe tratarlo como fallo fatal.
  */
 export async function initializeDatabase(env: NodeJS.ProcessEnv = process.env): Promise<void> {
-  const dbPath = env.SQLITE_DB_PATH ||
-    (env.DATABASE_URL ? env.DATABASE_URL.replace(/^file:/, '') : path.resolve(process.cwd(), 'prisma/dev.db'));
+  const dbPath = resolveDbPath(env);
 
   const dbDir = path.dirname(dbPath);
   if (!fs.existsSync(dbDir)) {
     fs.mkdirSync(dbDir, { recursive: true });
   }
 
-  const backupDir = env.SQLITE_BACKUP_DIR || path.join(dbDir, '..', 'backups');
+  const backupDir = resolveBackupDir(dbPath, env);
   if (!fs.existsSync(backupDir)) {
     fs.mkdirSync(backupDir, { recursive: true });
   }
@@ -238,6 +257,11 @@ export async function initializeDatabase(env: NodeJS.ProcessEnv = process.env): 
   db.pragma('foreign_keys = ON');
 
   try {
+    // ¿La BD ya traía tablas de usuario (instalación existente)? Se mide ANTES de crear `_migrations`.
+    const hadTables = (db.prepare(
+      "SELECT COUNT(*) AS n FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%' AND name <> '_migrations'"
+    ).get() as { n: number }).n > 0;
+
     // 1. Tabla de control de migraciones
     db.exec(`
       CREATE TABLE IF NOT EXISTS "_migrations" (
@@ -245,6 +269,25 @@ export async function initializeDatabase(env: NodeJS.ProcessEnv = process.env): 
         "applied_at" DATETIME DEFAULT CURRENT_TIMESTAMP
       );
     `);
+
+    // 1b. Copia de seguridad ANTES de migrar una BD que ya tenía datos. El backup diario corre
+    //     después de migrar, así que no protege el día de una migración.
+    const applied = (db.prepare('SELECT id FROM "_migrations"').all() as Array<{ id: string }>).map((r) => r.id);
+    const pending = getPendingMigrations(applied);
+    if (hadTables && pending.length > 0) {
+      const preMigrationFile = path.join(backupDir, preMigrationBackupName());
+      try {
+        await db.backup(preMigrationFile);
+        console.log(`[DB Init] Migraciones pendientes (${pending.join(', ')}). Copia previa guardada en: ${preMigrationFile}`);
+      } catch (err) {
+        // Migrar sin copia sobre datos reales es justo el riesgo que esta copia evita: se aborta el arranque.
+        throw new Error(
+          `No se pudo crear la copia previa a la migración (${preMigrationFile}); se cancela la migración para no arriesgar los datos: ${
+            err instanceof Error ? err.message : String(err)
+          }`
+        );
+      }
+    }
 
     // 2. Migración inicial 001_initial_schema
     const check001 = db.prepare('SELECT id FROM "_migrations" WHERE id = ?').get('001_initial_schema');
