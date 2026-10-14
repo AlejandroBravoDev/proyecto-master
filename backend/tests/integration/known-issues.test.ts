@@ -1,6 +1,7 @@
 /**
  * Hallazgos de la auditoría ya corregidos (ver .claude/skills/fullstack-domain-reference/references/known-issues.md):
- * B8 (ids y cuerpos inválidos), S3 (los 500 no filtran internals) y B9 (login sin distinguir mayúsculas).
+ * B8 (ids y cuerpos inválidos), S3 (los 500 no filtran internals), B9 (login sin distinguir mayúsculas)
+ * y S1 (la API exige autenticación y aplica roles; el detalle está en auth-*.test.ts).
  *
  * Antes eran `it.failing`; ahora son pruebas normales que impiden que vuelvan.
  */
@@ -232,5 +233,26 @@ describe('B9: el login no distingue mayúsculas', () => {
   it('la contraseña sigue distinguiendo mayúsculas y un usuario inexistente sigue siendo 401', async () => {
     expect((await ctx.api.post('/api/auth/login').send({ username: 'admin', password: '123456x' })).status).toBe(401);
     expect((await ctx.api.post('/api/auth/login').send({ username: 'fantasma', password: '123456' })).status).toBe(401);
+  });
+});
+
+describe('S1: el servidor autentica y autoriza (antes GET /api/users respondía 200 sin credenciales)', () => {
+  it('GET /api/users sin token ya no devuelve usuarios: 401', async () => {
+    const res = await ctx.anon.get('/api/users');
+    expect(res.status).toBe(401);
+    expect(JSON.stringify(res.body)).not.toMatch(/passwordHash|fullName|Admin/);
+  });
+
+  it('cambiar una contraseña sin token (PATCH /api/users/:id/password) ya no es posible: 401 y la contraseña no cambia', async () => {
+    const adminId = (await ctx.api.get('/api/auth/me')).body.user.id;
+    const res = await ctx.anon.patch(`/api/users/${adminId}/password`).send({ password: 'hackeada-1' });
+    expect(res.status).toBe(401);
+    expect((await ctx.anon.post('/api/auth/login').send({ username: 'Admin', password: '123456' })).status).toBe(200);
+  });
+
+  it('un trabajador autenticado tampoco puede gestionar usuarios: 403', async () => {
+    const worker = await ctx.createWorker();
+    expect((await worker.api.get('/api/users')).status).toBe(403);
+    expect((await worker.api.patch(`/api/users/${worker.user.id}/password`).send({ password: 'otra-clave-9' })).status).toBe(403);
   });
 });
