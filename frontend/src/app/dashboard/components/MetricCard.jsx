@@ -1,8 +1,13 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { DollarSign, Banknote, AlertTriangle, Eye, EyeOff } from 'lucide-react';
-import { formatCurrency, formatNumber } from '../utils/formatters';
+import { formatCurrency, formatNumber, formatPercentage } from '../utils/formatters';
 
+/**
+ * Tarjeta KPI. Solo muestra datos que vienen del backend: la variación porcentual (`metric.trend`)
+ * es OPCIONAL y solo se dibuja si el backend la entrega como número; si no, la tarjeta muestra la
+ * descripción de la métrica (nunca una cifra inventada).
+ */
 export default function MetricCard({ metric }) {
   const navigate = useNavigate();
   const isFinancial =
@@ -22,6 +27,14 @@ export default function MetricCard({ metric }) {
     : formatNumber(metric.rawValue);
 
   const displayValue = isFinancial && !isVisible ? '$****' : formattedValue;
+
+  const hasTrend = typeof metric.trend === 'number' && Number.isFinite(metric.trend);
+  const trendClass =
+    metric.trend > 0
+      ? 'text-emerald-500 bg-emerald-50'
+      : metric.trend < 0
+      ? 'text-rose-500 bg-rose-50'
+      : 'text-slate-500 bg-slate-100';
 
   const handleCardClick = () => {
     if (isStockAlert) {
@@ -82,10 +95,12 @@ export default function MetricCard({ metric }) {
             <span className="text-xs font-semibold text-slate-400 group-hover:text-[#E63946] transition-colors flex items-center gap-1">
               Artículos por acabarse <span className="font-bold">• Ver alertas →</span>
             </span>
-          ) : (
-            <span className="inline-flex items-center text-xs font-bold text-emerald-500 bg-emerald-50 px-2 py-0.5 rounded-md">
-              +2.5%
+          ) : hasTrend ? (
+            <span className={`inline-flex items-center text-xs font-bold px-2 py-0.5 rounded-md ${trendClass}`}>
+              {formatPercentage(metric.trend)}
             </span>
+          ) : (
+            <span className="text-xs font-semibold text-slate-400">{metric.description || ''}</span>
           )}
 
           {/* Watermark Icon */}
