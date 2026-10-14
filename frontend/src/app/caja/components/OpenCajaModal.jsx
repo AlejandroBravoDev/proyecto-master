@@ -1,6 +1,8 @@
-import React, { useState, useEffect, useMemo, useRef } from 'react';
-import { X, Unlock, Banknote, Coins, AlertCircle, RefreshCw, User } from 'lucide-react';
-import { CASH_DENOMINATIONS, calculateDenominationsTotal, formatCurrency } from '../utils/cajaUtils';
+import React, { useState, useEffect, useRef } from 'react';
+import { X, Unlock, AlertCircle, RefreshCw } from 'lucide-react';
+import { formatCurrency } from '../utils/cajaUtils';
+import { useDenominationCounts } from '../hooks/useDenominationCounts';
+import DenominationCounter from './DenominationCounter';
 import { useAuth } from '../../auth/AuthContext';
 
 export default function OpenCajaModal({
@@ -9,7 +11,7 @@ export default function OpenCajaModal({
   onSubmit,
 }) {
   const { user } = useAuth();
-  const [denominations, setDenominations] = useState({});
+  const { denominations, total: totalBase, setCount, quickAdd } = useDenominationCounts(isOpen);
   const [notes, setNotes] = useState('');
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
@@ -20,38 +22,8 @@ export default function OpenCajaModal({
     if (isOpen) {
       setError('');
       setNotes('');
-      // Initialize with 0 for all denominations
-      const initialCounts = {};
-      CASH_DENOMINATIONS.forEach((d) => {
-        initialCounts[d.value.toString()] = 0;
-      });
-      setDenominations(initialCounts);
     }
   }, [isOpen]);
-
-  // Calculations (unconditional hook)
-  const totalBase = useMemo(() => {
-    return calculateDenominationsTotal(denominations);
-  }, [denominations]);
-
-  const handleCountChange = (valStr, countStr) => {
-    const qty = Math.max(0, parseInt(countStr || '0', 10) || 0);
-    setDenominations((prev) => ({
-      ...prev,
-      [valStr]: qty,
-    }));
-  };
-
-  const handleQuickAdd = (valStr, delta) => {
-    setDenominations((prev) => {
-      const current = prev[valStr] || 0;
-      const nextVal = Math.max(0, current + delta);
-      return {
-        ...prev,
-        [valStr]: nextVal,
-      };
-    });
-  };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -82,9 +54,6 @@ export default function OpenCajaModal({
   };
 
   if (!isOpen) return null;
-
-  const coins = CASH_DENOMINATIONS.filter((d) => d.type === 'COIN');
-  const bills = CASH_DENOMINATIONS.filter((d) => d.type === 'BILL');
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-fade-in">
@@ -122,119 +91,13 @@ export default function OpenCajaModal({
           )}
 
           {/* Denominations Grid */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-            {/* Coins section */}
-            <div className="space-y-3">
-              <div className="flex items-center space-x-2 text-xs font-extrabold text-[#584235] border-b border-slate-100 pb-1.5">
-                <Coins className="w-4 h-4 text-amber-500" />
-                <span>Monedas Metálicas</span>
-              </div>
-
-              <div className="space-y-2">
-                {coins.map((c) => {
-                  const valKey = c.value.toString();
-                  const count = denominations[valKey] || 0;
-                  const rowSubtotal = c.value * count;
-
-                  return (
-                    <div
-                      key={valKey}
-                      className="flex items-center justify-between p-2 rounded-xl bg-[#F8F9FA] border border-slate-200/80 text-xs"
-                    >
-                      <span className="font-black text-[#584235] w-12">{c.label}</span>
-
-                      <div className="flex items-center space-x-1.5">
-                        <button
-                          type="button"
-                          onClick={() => handleQuickAdd(valKey, -5)}
-                          className="w-6 h-6 rounded-lg bg-slate-200 hover:bg-slate-300 font-bold text-slate-700 flex items-center justify-center text-[10px]"
-                          title="Restar 5"
-                        >
-                          -5
-                        </button>
-                        <input
-                          type="number"
-                          min="0"
-                          value={count === 0 ? '' : count}
-                          onChange={(e) => handleCountChange(valKey, e.target.value)}
-                          placeholder="0"
-                          className="w-14 px-2 py-1 rounded-lg bg-white border border-slate-300 text-center font-bold text-slate-800 text-xs focus:outline-none focus:border-[#E63946]"
-                        />
-                        <button
-                          type="button"
-                          onClick={() => handleQuickAdd(valKey, 5)}
-                          className="w-6 h-6 rounded-lg bg-slate-200 hover:bg-slate-300 font-bold text-slate-700 flex items-center justify-center text-[10px]"
-                          title="Sumar 5"
-                        >
-                          +5
-                        </button>
-                      </div>
-
-                      <span className="font-bold text-slate-500 w-16 text-right">
-                        {formatCurrency(rowSubtotal)}
-                      </span>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-
-            {/* Bills section */}
-            <div className="space-y-3">
-              <div className="flex items-center space-x-2 text-xs font-extrabold text-[#584235] border-b border-slate-100 pb-1.5">
-                <Banknote className="w-4 h-4 text-emerald-600" />
-                <span>Billetes de Papel</span>
-              </div>
-
-              <div className="space-y-2">
-                {bills.map((b) => {
-                  const valKey = b.value.toString();
-                  const count = denominations[valKey] || 0;
-                  const rowSubtotal = b.value * count;
-
-                  return (
-                    <div
-                      key={valKey}
-                      className="flex items-center justify-between p-2 rounded-xl bg-[#F8F9FA] border border-slate-200/80 text-xs"
-                    >
-                      <span className="font-black text-[#584235] w-12">{b.label}</span>
-
-                      <div className="flex items-center space-x-1.5">
-                        <button
-                          type="button"
-                          onClick={() => handleQuickAdd(valKey, -1)}
-                          className="w-6 h-6 rounded-lg bg-slate-200 hover:bg-slate-300 font-bold text-slate-700 flex items-center justify-center text-[10px]"
-                          title="Restar 1"
-                        >
-                          -1
-                        </button>
-                        <input
-                          type="number"
-                          min="0"
-                          value={count === 0 ? '' : count}
-                          onChange={(e) => handleCountChange(valKey, e.target.value)}
-                          placeholder="0"
-                          className="w-14 px-2 py-1 rounded-lg bg-white border border-slate-300 text-center font-bold text-slate-800 text-xs focus:outline-none focus:border-[#E63946]"
-                        />
-                        <button
-                          type="button"
-                          onClick={() => handleQuickAdd(valKey, 1)}
-                          className="w-6 h-6 rounded-lg bg-slate-200 hover:bg-slate-300 font-bold text-slate-700 flex items-center justify-center text-[10px]"
-                          title="Sumar 1"
-                        >
-                          +1
-                        </button>
-                      </div>
-
-                      <span className="font-bold text-slate-500 w-16 text-right">
-                        {formatCurrency(rowSubtotal)}
-                      </span>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-          </div>
+          <DenominationCounter
+            denominations={denominations}
+            onCountChange={setCount}
+            onQuickAdd={quickAdd}
+            coinsTitle="Monedas Metálicas"
+            billsTitle="Billetes de Papel"
+          />
 
           {/* Notes field */}
           <div className="space-y-1">
