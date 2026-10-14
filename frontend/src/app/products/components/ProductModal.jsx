@@ -1,13 +1,17 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { X, Plus, Trash2, ChefHat, Box, AlertCircle, RefreshCw } from 'lucide-react';
 import { fetchIngredientsForRecipe } from '../services/productService';
+import { buildRecipeIngredients, isInvalidRecipeRow, isSameRecipe } from '../utils/productUtils';
 import CustomSelect from '../../common/CustomSelect';
+
+// Constante fuera del componente: un `[]` por defecto cambiaría en cada render y reiniciaría el formulario.
+const NO_CATEGORIES = [];
 
 export default function ProductModal({
   isOpen,
   onClose,
   onSubmit,
-  categories = [],
+  categories = NO_CATEGORIES,
   initialData = null,
 }) {
   const [name, setName] = useState('');
@@ -17,8 +21,9 @@ export default function ProductModal({
   const [productType, setProductType] = useState('PREPARED');
   const [available, setAvailable] = useState(true);
 
-  // Dynamic Recipe Ingredients
+  // Dynamic Recipe Ingredients (+ snapshot of the saved recipe, to know whether it changed when editing)
   const [recipeIngredients, setRecipeIngredients] = useState([]);
+  const [initialRecipeRows, setInitialRecipeRows] = useState([]);
 
   const [error, setError] = useState('');
   const [saving, setSaving] = useState(false);
@@ -40,18 +45,17 @@ export default function ProductModal({
         setAvailable(initialData.available !== undefined ? Boolean(initialData.available) : true);
 
         // Pre-fill existing recipe ingredients if any
-        if (initialData.recipe && initialData.recipe.recipeDetails) {
-          setRecipeIngredients(
-            initialData.recipe.recipeDetails.map((rd) => ({
-              ingredientId: rd.ingredientId,
-              quantity: rd.quantity,
-              measurementUnit: rd.measurementUnit || rd.ingredient?.measurementUnit || '',
-              ingredientName: rd.ingredient?.name || '',
-            }))
-          );
-        } else {
-          setRecipeIngredients([]);
-        }
+        const savedRows =
+          initialData.recipe && initialData.recipe.recipeDetails
+            ? initialData.recipe.recipeDetails.map((rd) => ({
+                ingredientId: rd.ingredientId,
+                quantity: rd.quantity,
+                measurementUnit: rd.measurementUnit || rd.ingredient?.measurementUnit || '',
+                ingredientName: rd.ingredient?.name || '',
+              }))
+            : [];
+        setRecipeIngredients(savedRows);
+        setInitialRecipeRows(savedRows);
       } else {
         setName('');
         setCategoryId(categories.length > 0 ? String(categories[0].id) : '');
@@ -60,6 +64,7 @@ export default function ProductModal({
         setProductType('PREPARED');
         setAvailable(true);
         setRecipeIngredients([]);
+        setInitialRecipeRows([]);
       }
     }
   }, [isOpen, initialData, categories]);
@@ -131,32 +136,37 @@ export default function ProductModal({
     isSubmittingRef.current = true;
     setSaving(true);
     try {
+      // Descripción: al editar, vaciarla envía `null` (limpia el campo); `undefined` significaría
+      // "no tocar" y el cambio se perdería. Al crear basta con omitirla.
+      const trimmedDescription = description.trim();
       const payload = {
         categoryId: Number(categoryId),
         name: name.trim(),
-        description: description.trim() || undefined,
+        description: isEditing ? trimmedDescription || null : trimmedDescription || undefined,
         salePrice: priceNum,
         productType,
         available,
       };
 
-      if (!isEditing && productType === 'PREPARED' && recipeIngredients.length > 0) {
-        const hasInvalid = recipeIngredients.some(
-          (item) => !item.ingredientId || Number(item.quantity) <= 0
-        );
-        if (hasInvalid) {
-          setError('Por favor selecciona un insumo válido y una cantidad mayor a 0 para cada fila de la receta.');
-          return;
-        }
+      // Receta (solo productos preparados). Al crear se envía si tiene filas. Al editar se envía
+      // cuando cambió respecto a la guardada, incluso vacía (= quitar todos los insumos);
+      // la página la guarda aparte con POST /api/recipes, que reemplaza la receta anterior.
+      if (productType === 'PREPARED') {
+        const recipeChanged = isEditing
+          ? !isSameRecipe(recipeIngredients, initialRecipeRows)
+          : recipeIngredients.length > 0;
 
-        payload.recipe = {
-          name: `Receta de ${name.trim()}`,
-          ingredients: recipeIngredients.map((item) => ({
-            ingredientId: Number(item.ingredientId),
-            quantity: Number(item.quantity),
-            measurementUnit: String(item.measurementUnit || 'unidad'),
-          })),
-        };
+        if (recipeChanged) {
+          if (recipeIngredients.some(isInvalidRecipeRow)) {
+            setError('Por favor selecciona un insumo válido y una cantidad mayor a 0 para cada fila de la receta.');
+            return;
+          }
+
+          payload.recipe = {
+            name: `Receta de ${name.trim()}`,
+            ingredients: buildRecipeIngredients(recipeIngredients),
+          };
+        }
       }
 
       await onSubmit(payload);

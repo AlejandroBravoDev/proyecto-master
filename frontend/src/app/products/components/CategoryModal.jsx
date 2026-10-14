@@ -57,7 +57,7 @@ export default function CategoryModal({
     setError('');
     const result = await confirmDialog({
       title: `¿Eliminar categoría "${cat.name}"?`,
-      text: 'Se eliminará la categoría del catálogo. Los productos asociados quedarán sin categoría.',
+      text: 'Solo se puede eliminar una categoría que no tenga productos. Si todavía los tiene, el sistema no la eliminará: mueve esos productos a otra categoría o elimínalos primero.',
       confirmButtonText: 'Sí, eliminar',
       cancelButtonText: 'Cancelar',
     });

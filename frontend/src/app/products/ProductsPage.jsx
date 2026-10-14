@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
-import { AlertCircle, RefreshCw, CheckCircle2, UtensilsCrossed, Plus } from 'lucide-react';
+import { AlertCircle, RefreshCw, UtensilsCrossed, Plus } from 'lucide-react';
 import ProductHeaderCard from './components/ProductHeaderCard';
 import CategoryFilterBar from './components/CategoryFilterBar';
 import ProductCard from './components/ProductCard';
@@ -11,8 +11,9 @@ import {
   createProduct,
   updateProduct,
   deleteProduct,
+  saveProductRecipe,
 } from './services/productService';
-import { confirmDialog, showErrorAlert } from '../common/alertUtils';
+import { confirmDialog, showErrorAlert, showSuccessToast } from '../common/alertUtils';
 import { useAuth } from '../auth/AuthContext';
 
 export default function ProductsPage() {
@@ -32,14 +33,6 @@ export default function ProductsPage() {
   const [selectedProduct, setSelectedProduct] = useState(null);
 
   const [categoryModalOpen, setCategoryModalOpen] = useState(false);
-
-  // Toast feedback state
-  const [toast, setToast] = useState(null);
-
-  const showToast = (message, type = 'success') => {
-    setToast({ message, type });
-    setTimeout(() => setToast(null), 3500);
-  };
 
   // Load all products and categories
   const loadData = useCallback(() => {
@@ -114,28 +107,49 @@ export default function ProductsPage() {
     setProductModalOpen(true);
   };
 
+  // El modal envía el producto y, si cambió, la receta (`recipe`). Al crear, el backend la guarda
+  // junto con el producto; al editar, la receta se reemplaza aparte con POST /api/recipes.
+  // Si algo falla se relanza el error: el modal lo muestra en su banner y no se cierra.
   const handleSaveProduct = async (formData) => {
     if (selectedProduct) {
-      await updateProduct(selectedProduct.id, formData);
-      showToast('Producto actualizado correctamente.');
+      const { recipe, ...productData } = formData;
+      await updateProduct(selectedProduct.id, productData);
+
+      if (recipe) {
+        try {
+          await saveProductRecipe(selectedProduct.id, recipe);
+        } catch (err) {
+          // El producto ya se guardó: refresca el listado para que no quede desactualizado.
+          loadData();
+          throw new Error(`Los datos del producto se guardaron, pero la receta no: ${err.message}`);
+        }
+      }
+      showSuccessToast('Producto actualizado correctamente.');
     } else {
       await createProduct(formData);
-      showToast('Producto creado exitosamente.');
+      showSuccessToast('Producto creado exitosamente.');
     }
     loadData();
   };
 
   const handleToggleAvailability = async (id, newAvailability) => {
-    await updateProduct(id, { available: newAvailability });
-    showToast(newAvailability ? 'Producto marcado como disponible.' : 'Producto marcado como agotado.');
-    loadData();
+    try {
+      await updateProduct(id, { available: newAvailability });
+      showSuccessToast(newAvailability ? 'Producto marcado como disponible.' : 'Producto marcado como agotado.');
+      loadData();
+    } catch (err) {
+      showErrorAlert('Error al cambiar disponibilidad', err.message || 'No se pudo actualizar el producto.');
+    }
   };
 
   const handleDeleteProduct = async (item) => {
     if (!isAdmin) return;
     const result = await confirmDialog({
       title: `¿Eliminar "${item.name}"?`,
-      text: 'El producto se eliminará definitivamente del menú de ventas.',
+      text:
+        'El producto se eliminará definitivamente del menú. Si ya tiene historial de comandas o ventas, ' +
+        'el sistema no permitirá eliminarlo: en ese caso márcalo como "No Disponible" (Agotado) para quitarlo ' +
+        'de la venta sin perder el historial.',
       confirmButtonText: 'Sí, eliminar',
       cancelButtonText: 'Cancelar',
     });
@@ -143,30 +157,17 @@ export default function ProductsPage() {
     if (result.isConfirmed) {
       try {
         await deleteProduct(item.id);
-        showToast('Producto eliminado del menú.');
+        showSuccessToast('Producto eliminado del menú.');
         loadData();
       } catch (err) {
-        showErrorAlert('Error al eliminar producto', err.message || 'No se pudo eliminar el producto.');
+        // Muestra el motivo real del servidor (p. ej. "tiene historial; desactívalo en lugar de eliminarlo").
+        showErrorAlert('No se pudo eliminar el producto', err.message || 'No se pudo eliminar el producto.');
       }
     }
   };
 
   return (
     <div className="space-y-6 max-w-7xl mx-auto pb-8">
-      {/* Toast Alert */}
-      {toast && (
-        <div
-          className={`fixed bottom-6 right-6 z-50 px-5 py-3 rounded-2xl shadow-xl border flex items-center space-x-3 text-sm font-bold animate-slide-up ${
-            toast.type === 'success'
-              ? 'bg-emerald-600 text-white border-emerald-700'
-              : 'bg-[#E63946] text-white border-red-700'
-          }`}
-        >
-          <CheckCircle2 className="w-5 h-5" />
-          <span>{toast.message}</span>
-        </div>
-      )}
-
       {/* TOP SWITCHER: Category Filter Bar */}
       <CategoryFilterBar
         categories={categories}
