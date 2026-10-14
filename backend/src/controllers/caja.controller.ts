@@ -8,6 +8,13 @@
 
 import { Request, Response } from 'express';
 import { cajaService } from '../services/caja.service';
+import { errorDetails, parseId, parseOptionalText, parsePagination, toFiniteNumber } from '../utils/http.utils';
+
+/** `userId` es opcional: vacío = sin auditor; si viene debe ser un id válido (null = inválido). */
+function parseOptionalUserId(value: unknown): number | undefined | null {
+  if (value === undefined || value === null || value === '') return undefined;
+  return parseId(value);
+}
 
 export class CajaController {
   /**
@@ -19,7 +26,7 @@ export class CajaController {
       const status = await cajaService.getCurrentStatus();
       return res.status(200).json(status);
     } catch (error: any) {
-      return res.status(500).json({ error: 'Error al consultar estado de caja', details: error.message || error });
+      return res.status(500).json({ error: 'Error al consultar estado de caja', details: errorDetails(error) });
     }
   }
 
@@ -29,7 +36,7 @@ export class CajaController {
    */
   async openSession(req: Request, res: Response) {
     try {
-      const { denominations, notes, userId } = req.body;
+      const { denominations, notes, userId } = req.body ?? {};
 
       if (!denominations || typeof denominations !== 'object') {
         return res.status(400).json({
@@ -37,7 +44,12 @@ export class CajaController {
         });
       }
 
-      const session = await cajaService.openSession({ denominations, notes, userId });
+      const parsedUserId = parseOptionalUserId(userId);
+      if (parsedUserId === null) {
+        return res.status(400).json({ error: 'userId inválido' });
+      }
+
+      const session = await cajaService.openSession({ denominations, notes, userId: parsedUserId });
       return res.status(201).json(session);
     } catch (error: any) {
       if (error.message === 'SESSION_ALREADY_OPEN') {
@@ -45,7 +57,10 @@ export class CajaController {
           error: 'Ya existe una caja abierta actualmente. Debe cerrar la caja activa antes de abrir una nueva.'
         });
       }
-      return res.status(500).json({ error: 'Error al abrir la caja', details: error.message || error });
+      if (error.message === 'USER_NOT_FOUND' || error.code === 'P2003') {
+        return res.status(400).json({ error: 'El usuario indicado (userId) no existe' });
+      }
+      return res.status(500).json({ error: 'Error al abrir la caja', details: errorDetails(error) });
     }
   }
 
@@ -55,7 +70,7 @@ export class CajaController {
    */
   async closeSession(req: Request, res: Response) {
     try {
-      const { denominations, closingNotes, userId } = req.body;
+      const { denominations, closingNotes, userId } = req.body ?? {};
 
       if (!denominations || typeof denominations !== 'object') {
         return res.status(400).json({
@@ -63,7 +78,12 @@ export class CajaController {
         });
       }
 
-      const closedSession = await cajaService.closeSession({ denominations, closingNotes, userId });
+      const parsedUserId = parseOptionalUserId(userId);
+      if (parsedUserId === null) {
+        return res.status(400).json({ error: 'userId inválido' });
+      }
+
+      const closedSession = await cajaService.closeSession({ denominations, closingNotes, userId: parsedUserId });
       return res.status(200).json(closedSession);
     } catch (error: any) {
       if (error.message === 'NO_ACTIVE_SESSION') {
@@ -71,7 +91,10 @@ export class CajaController {
           error: 'No hay ninguna caja abierta actualmente para cerrar.'
         });
       }
-      return res.status(500).json({ error: 'Error al cerrar la caja', details: error.message || error });
+      if (error.message === 'USER_NOT_FOUND' || error.code === 'P2003') {
+        return res.status(400).json({ error: 'El usuario indicado (userId) no existe' });
+      }
+      return res.status(500).json({ error: 'Error al cerrar la caja', details: errorDetails(error) });
     }
   }
 
@@ -82,15 +105,35 @@ export class CajaController {
   async updateSession(req: Request, res: Response) {
     try {
       const id = Number(req.params.id);
-      const { initialAmount, finalAmount, notes, closingNotes } = req.body;
+      const { initialAmount, finalAmount, notes, closingNotes } = req.body ?? {};
 
-      const updated = await cajaService.updateSession(id, { initialAmount, finalAmount, notes, closingNotes });
+      const data: { initialAmount?: number; finalAmount?: number; notes?: string; closingNotes?: string } = {};
+
+      for (const [field, raw] of [['initialAmount', initialAmount], ['finalAmount', finalAmount]] as const) {
+        if (raw === undefined) continue;
+        const amount = toFiniteNumber(raw);
+        if (amount === null || amount < 0) {
+          return res.status(400).json({ error: `El campo "${field}" debe ser un número mayor o igual a 0` });
+        }
+        data[field] = amount;
+      }
+
+      for (const [field, raw] of [['notes', notes], ['closingNotes', closingNotes]] as const) {
+        const parsed = parseOptionalText(raw);
+        if (!parsed.valid) {
+          return res.status(400).json({ error: `El campo "${field}" debe ser texto` });
+        }
+        // Un texto vacío limpia la nota (la columna acepta null)
+        if (parsed.value !== undefined) data[field] = parsed.value ?? '';
+      }
+
+      const updated = await cajaService.updateSession(id, data);
       return res.status(200).json(updated);
     } catch (error: any) {
       if (error.message === 'SESSION_NOT_FOUND') {
         return res.status(404).json({ error: 'Sesión de caja no encontrada.' });
       }
-      return res.status(500).json({ error: 'Error al actualizar sesión de caja', details: error.message || error });
+      return res.status(500).json({ error: 'Error al actualizar sesión de caja', details: errorDetails(error) });
     }
   }
 
@@ -100,14 +143,25 @@ export class CajaController {
    */
   async getHistory(req: Request, res: Response) {
     try {
-      const limit = req.query.limit ? parseInt(String(req.query.limit), 10) : 20;
-      const page = req.query.page ? parseInt(String(req.query.page), 10) : 1;
-      const openedByUserId = req.query.openedByUserId ? parseInt(String(req.query.openedByUserId), 10) : undefined;
+      const pagination = parsePagination(req.query, { defaultLimit: 20, maxLimit: 200 });
+      if (pagination === null) {
+        return res.status(400).json({ error: 'page y limit deben ser enteros mayores a 0' });
+      }
+      const { page, limit } = pagination ?? { page: 1, limit: 20 };
+
+      let openedByUserId: number | undefined;
+      if (req.query.openedByUserId !== undefined && req.query.openedByUserId !== '') {
+        const parsed = parseId(req.query.openedByUserId);
+        if (parsed === null) {
+          return res.status(400).json({ error: 'openedByUserId inválido' });
+        }
+        openedByUserId = parsed;
+      }
 
       const history = await cajaService.getSessionHistory(limit, page, openedByUserId);
       return res.status(200).json(history);
     } catch (error: any) {
-      return res.status(500).json({ error: 'Error al obtener historial de cajas', details: error.message || error });
+      return res.status(500).json({ error: 'Error al obtener historial de cajas', details: errorDetails(error) });
     }
   }
 
@@ -126,7 +180,7 @@ export class CajaController {
 
       return res.status(200).json(session);
     } catch (error: any) {
-      return res.status(500).json({ error: 'Error al obtener sesión de caja', details: error.message || error });
+      return res.status(500).json({ error: 'Error al obtener sesión de caja', details: errorDetails(error) });
     }
   }
 }

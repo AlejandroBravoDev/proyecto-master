@@ -7,8 +7,12 @@
 
 import { Router } from 'express';
 import { cajaController } from '../controllers/caja.controller';
+import { validateIdParam } from '../utils/http.utils';
 
 const router = Router();
+
+// Un :id que no sea entero positivo responde 400 en lugar de llegar a Prisma (500)
+router.param('id', validateIdParam);
 
 // Endpoint GET: Consultar el estado en tiempo real de la caja (abierta / cerrada)
 router.get('/status', (req, res) => cajaController.getStatus(req, res));

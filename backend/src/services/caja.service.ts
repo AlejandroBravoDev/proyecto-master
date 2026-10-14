@@ -11,6 +11,7 @@
  */
 
 import prisma from '../prisma/client';
+import { nextCashSessionNumber } from '../utils/sequence.utils';
 
 export interface DenominationItem {
   value: number;
@@ -63,6 +64,19 @@ export class CajaService {
       total: Number(total.toFixed(2)),
       normalized
     };
+  }
+
+  /**
+   * Comprueba que el usuario auditor (opcional) exista: se comprobó con una prueba que la conexión
+   * de Prisma acepta un id inexistente y lo guarda como referencia rota.
+   * Lanza `USER_NOT_FOUND`.
+   */
+  private async assertUserExists(userId?: number) {
+    if (!userId) return;
+    const user = await prisma.user.findUnique({ where: { id: Number(userId) }, select: { id: true } });
+    if (!user) {
+      throw new Error('USER_NOT_FOUND');
+    }
   }
 
   /**
@@ -143,33 +157,13 @@ export class CajaService {
     if (existingOpen) {
       throw new Error('SESSION_ALREADY_OPEN');
     }
+    await this.assertUserExists(data.userId);
 
     // 2. Calcular la base inicial y normalizar desglose
     const { total, normalized } = this.calculateDenominationsTotal(data.denominations);
 
     // 3. Generar número secuencial correlativo seguro y libre de colisiones (ej: CAJA-YYYY-XXXX)
-    const currentYear = new Date().getFullYear();
-    const lastSession = await prisma.cashSession.findFirst({
-      orderBy: { id: 'desc' },
-      select: { id: true, sessionNumber: true }
-    });
-
-    let nextSessionSeq = (lastSession?.id ?? 0) + 1;
-    if (lastSession?.sessionNumber) {
-      const match = lastSession.sessionNumber.match(/(\d+)$/);
-      if (match) {
-        const lastNum = parseInt(match[1], 10);
-        if (!isNaN(lastNum)) {
-          nextSessionSeq = Math.max(nextSessionSeq, lastNum + 1);
-        }
-      }
-    }
-
-    let sessionNumber = `CAJA-${currentYear}-${nextSessionSeq.toString().padStart(4, '0')}`;
-    while (await prisma.cashSession.findUnique({ where: { sessionNumber } })) {
-      nextSessionSeq++;
-      sessionNumber = `CAJA-${currentYear}-${nextSessionSeq.toString().padStart(4, '0')}`;
-    }
+    const sessionNumber = await nextCashSessionNumber(prisma);
 
     // 4. Crear registro de apertura con usuario auditor
     const newSession = await prisma.cashSession.create({
@@ -204,6 +198,7 @@ export class CajaService {
     if (!activeSession) {
       throw new Error('NO_ACTIVE_SESSION');
     }
+    await this.assertUserExists(data.userId);
 
     // 2. Calcular el total contado al cierre a partir del desglose
     const { total: finalAmount, normalized: finalNormalized } = this.calculateDenominationsTotal(data.denominations);
