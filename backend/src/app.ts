@@ -35,6 +35,7 @@ import {
   resolveCorsPolicy,
   resolveTrustProxy,
 } from './middleware/security';
+import { getJwtSecret } from './utils/jwt.utils';
 
 export interface AppOptions {
   /** Entorno con el que se configura la app (por defecto process.env). Solo se inyecta en pruebas. */
@@ -69,7 +70,12 @@ export function createApp(options: AppOptions = {}): Express {
 
   const app = express();
 
-  // 0. Detrás del proxy de Railway/Render la IP real viene en X-Forwarded-For: sin esto todos los
+  // 0a. Secreto de las sesiones (JWT): se resuelve ya para que el aviso de "JWT_SECRET sin definir /
+  //     demasiado corta" salga al arrancar y no en el primer login. Los tokens los verifica
+  //     `authenticate` (routes/index.ts), que vuelve a leer JWT_SECRET en cada petición.
+  getJwtSecret(env);
+
+  // 0b. Detrás del proxy de Railway/Render la IP real viene en X-Forwarded-For: sin esto todos los
   //    clientes comparten la IP del proxy (un único cupo de límite de tasa para todo el mundo).
   app.set('trust proxy', resolveTrustProxy(env));
 
