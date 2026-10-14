@@ -1,6 +1,6 @@
 import React, { useState, useRef } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
-import { Utensils, Lock, User, Eye, EyeOff, AlertCircle, RefreshCw, Sparkles } from 'lucide-react';
+import { Utensils, Lock, User, Eye, EyeOff, AlertCircle, RefreshCw, Sparkles, ShieldAlert } from 'lucide-react';
 import { useAuth } from './AuthContext';
 import { showSuccessToast } from '../common/alertUtils';
 
@@ -12,7 +12,7 @@ export default function LoginPage() {
   const [saving, setSaving] = useState(false);
 
   const isSubmittingRef = useRef(false);
-  const { login } = useAuth();
+  const { login, sessionNotice } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
 
@@ -85,6 +85,17 @@ export default function LoginPage() {
               Ingresa tus credenciales de acceso para entrar al sistema
             </p>
           </div>
+
+          {/* Aviso de sesión cerrada por el servidor (token vencido, inválido o usuario inactivo) */}
+          {sessionNotice && (
+            <div
+              role="status"
+              className="p-3.5 rounded-2xl bg-amber-50/70 border border-amber-200/80 text-xs font-semibold text-amber-800 flex items-center space-x-2.5"
+            >
+              <ShieldAlert className="w-4 h-4 shrink-0" />
+              <span>{sessionNotice}</span>
+            </div>
+          )}
 
           {/* Error Banner */}
           {error && (
