@@ -7,7 +7,12 @@
  */
 
 import { Request, Response } from 'express';
+import { MovementReason } from '@prisma/client';
 import { ingredientService, MAX_IMPORT_ROWS } from '../services/ingredient.service';
+import { errorDetails, parseOptionalNumber, parseOptionalText, parseRequiredText, toFiniteNumber } from '../utils/http.utils';
+
+/** Valores válidos de `adjustReason` (enum MovementReason de Prisma). */
+const MOVEMENT_REASONS: string[] = Object.values(MovementReason);
 
 export class IngredientController {
   /**
@@ -20,7 +25,7 @@ export class IngredientController {
       const ingredients = await ingredientService.getAllIngredients(search);
       return res.json(ingredients);
     } catch (error) {
-      return res.status(500).json({ error: 'Error al obtener los insumos', details: error });
+      return res.status(500).json({ error: 'Error al obtener los insumos', details: errorDetails(error) });
     }
   }
 
@@ -44,7 +49,7 @@ export class IngredientController {
       await workbook.xlsx.write(res);
       return res.end();
     } catch (error) {
-      return res.status(500).json({ error: 'Error al generar la plantilla de Excel', details: error });
+      return res.status(500).json({ error: 'Error al generar la plantilla de Excel', details: errorDetails(error) });
     }
   }
 
@@ -68,7 +73,7 @@ export class IngredientController {
       await workbook.xlsx.write(res);
       return res.end();
     } catch (error) {
-      return res.status(500).json({ error: 'Error al exportar el reporte a Excel', details: error });
+      return res.status(500).json({ error: 'Error al exportar el reporte a Excel', details: errorDetails(error) });
     }
   }
 
@@ -103,7 +108,7 @@ export class IngredientController {
       if (error.message === 'TOO_MANY_ROWS') {
         return res.status(400).json({ error: `El archivo supera el máximo de ${MAX_IMPORT_ROWS} filas por carga` });
       }
-      return res.status(500).json({ error: 'Error al procesar la carga masiva de insumos', details: error.message });
+      return res.status(500).json({ error: 'Error al procesar la carga masiva de insumos', details: errorDetails(error) });
     }
   }
 
@@ -122,7 +127,7 @@ export class IngredientController {
 
       return res.json(ingredient);
     } catch (error) {
-      return res.status(500).json({ error: 'Error al obtener el insumo', details: error });
+      return res.status(500).json({ error: 'Error al obtener el insumo', details: errorDetails(error) });
     }
   }
 
@@ -132,19 +137,33 @@ export class IngredientController {
    */
   async createIngredient(req: Request, res: Response) {
     try {
-      const { name, description, measurementUnit, currentStock, minimumStock, unitCost } = req.body;
+      const { name, description, measurementUnit, currentStock, minimumStock, unitCost } = req.body ?? {};
 
-      if (!name || !measurementUnit) {
+      const trimmedName = parseRequiredText(name);
+      const trimmedUnit = parseRequiredText(measurementUnit);
+      if (trimmedName === null || trimmedUnit === null) {
         return res.status(400).json({ error: 'Nombre y unidad de medida son requeridos' });
       }
 
+      const parsedDescription = parseOptionalText(description);
+      if (!parsedDescription.valid) {
+        return res.status(400).json({ error: 'La descripción del insumo debe ser texto' });
+      }
+
+      const stock = parseOptionalNumber(currentStock);
+      const minimum = parseOptionalNumber(minimumStock);
+      const cost = parseOptionalNumber(unitCost);
+      if (stock === null || minimum === null || cost === null) {
+        return res.status(400).json({ error: 'El stock inicial, el stock mínimo y el costo unitario deben ser números mayores o iguales a 0' });
+      }
+
       const ingredient = await ingredientService.createIngredient({
-        name,
-        description,
-        measurementUnit,
-        currentStock: currentStock ? Number(currentStock) : undefined,
-        minimumStock: minimumStock ? Number(minimumStock) : undefined,
-        unitCost: unitCost ? Number(unitCost) : undefined
+        name: trimmedName,
+        description: parsedDescription.value,
+        measurementUnit: trimmedUnit,
+        currentStock: stock,
+        minimumStock: minimum,
+        unitCost: cost
       });
 
       return res.status(201).json(ingredient);
@@ -152,29 +171,77 @@ export class IngredientController {
       if (error.code === 'P2002') {
         return res.status(400).json({ error: 'Ya existe un insumo con este nombre' });
       }
-      return res.status(500).json({ error: 'Error al crear el insumo', details: error });
+      return res.status(500).json({ error: 'Error al crear el insumo', details: errorDetails(error) });
     }
   }
 
   /**
    * PUT /api/ingredients/:id
    * Modifica propiedades o procesa un ajuste manual de inventario.
+   * `adjustReason` debe ser PURCHASE, SALE, WASTE o MANUAL_ADJUSTMENT (400 si no).
+   * `description: null` (o texto vacío) limpia la descripción.
    */
   async updateIngredient(req: Request, res: Response) {
     try {
       const id = Number(req.params.id);
-      const { name, description, measurementUnit, minimumStock, unitCost, active, adjustStock, adjustReason } = req.body;
+      const { name, description, measurementUnit, minimumStock, unitCost, active, adjustStock, adjustReason } = req.body ?? {};
 
-      const updated = await ingredientService.updateIngredient(id, {
-        name,
-        description,
-        measurementUnit,
-        minimumStock: minimumStock !== undefined ? Number(minimumStock) : undefined,
-        unitCost: unitCost !== undefined ? Number(unitCost) : undefined,
-        active: active !== undefined ? Boolean(active) : undefined,
-        adjustStock: adjustStock !== undefined ? Number(adjustStock) : undefined,
-        adjustReason
-      });
+      const data: Parameters<typeof ingredientService.updateIngredient>[1] = {};
+
+      if (name !== undefined) {
+        const trimmedName = parseRequiredText(name);
+        if (trimmedName === null) {
+          return res.status(400).json({ error: 'El nombre del insumo no puede estar vacío' });
+        }
+        data.name = trimmedName;
+      }
+      if (measurementUnit !== undefined) {
+        const trimmedUnit = parseRequiredText(measurementUnit);
+        if (trimmedUnit === null) {
+          return res.status(400).json({ error: 'La unidad de medida no puede estar vacía' });
+        }
+        data.measurementUnit = trimmedUnit;
+      }
+
+      const parsedDescription = parseOptionalText(description);
+      if (!parsedDescription.valid) {
+        return res.status(400).json({ error: 'La descripción del insumo debe ser texto' });
+      }
+      if (parsedDescription.value !== undefined) data.description = parsedDescription.value;
+
+      const minimum = parseOptionalNumber(minimumStock);
+      const cost = parseOptionalNumber(unitCost);
+      if (minimum === null || cost === null) {
+        return res.status(400).json({ error: 'El stock mínimo y el costo unitario deben ser números mayores o iguales a 0' });
+      }
+      if (minimum !== undefined) data.minimumStock = minimum;
+      if (cost !== undefined) data.unitCost = cost;
+
+      if (active !== undefined) {
+        if (typeof active !== 'boolean') {
+          return res.status(400).json({ error: 'El campo "active" debe ser booleano' });
+        }
+        data.active = active;
+      }
+
+      if (adjustStock !== undefined && adjustStock !== null) {
+        const delta = toFiniteNumber(adjustStock);
+        if (delta === null) {
+          return res.status(400).json({ error: 'El ajuste de stock (adjustStock) debe ser un número' });
+        }
+        data.adjustStock = delta;
+      }
+
+      if (adjustReason !== undefined && adjustReason !== null) {
+        if (typeof adjustReason !== 'string' || !MOVEMENT_REASONS.includes(adjustReason)) {
+          return res.status(400).json({
+            error: `Motivo de ajuste inválido. Use uno de: ${MOVEMENT_REASONS.join(', ')}`
+          });
+        }
+        data.adjustReason = adjustReason as MovementReason;
+      }
+
+      const updated = await ingredientService.updateIngredient(id, data);
 
       return res.json(updated);
     } catch (error: any) {
@@ -184,7 +251,10 @@ export class IngredientController {
       if (error.message === 'STOCK_CANNOT_BE_NEGATIVE') {
         return res.status(400).json({ error: 'El stock no puede quedar en negativo' });
       }
-      return res.status(500).json({ error: 'Error al actualizar el insumo', details: error });
+      if (error.code === 'P2002') {
+        return res.status(400).json({ error: 'Ya existe un insumo con este nombre' });
+      }
+      return res.status(500).json({ error: 'Error al actualizar el insumo', details: errorDetails(error) });
     }
   }
 
@@ -201,7 +271,7 @@ export class IngredientController {
       if (error.code === 'P2025') {
         return res.status(404).json({ error: 'Insumo no encontrado' });
       }
-      return res.status(500).json({ error: 'Error al eliminar el insumo', details: error });
+      return res.status(500).json({ error: 'Error al eliminar el insumo', details: errorDetails(error) });
     }
   }
 }

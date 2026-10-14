@@ -8,6 +8,7 @@
 import { Router, Request, Response, NextFunction } from 'express';
 import multer from 'multer';
 import { ingredientController } from '../controllers/ingredient.controller';
+import { validateIdParam } from '../utils/http.utils';
 
 const MAX_UPLOAD_BYTES = 10 * 1024 * 1024; // 10 MB
 // busboy corta cuando el archivo ALCANZA el límite; el +1 hace que uno de exactamente 10 MB sí se acepte
@@ -26,6 +27,9 @@ const uploadSingleFile = (req: Request, res: Response, next: NextFunction) => {
 };
 
 const router = Router();
+
+// Un :id que no sea entero positivo responde 400 en lugar de llegar a Prisma (500)
+router.param('id', validateIdParam);
 
 // Endpoint GET: Listar todo el inventario de materias primas
 router.get('/', (req, res) => ingredientController.getIngredients(req, res));

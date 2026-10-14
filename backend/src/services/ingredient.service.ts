@@ -8,6 +8,7 @@
  */
 
 import prisma from '../prisma/client';
+import { MovementReason } from '@prisma/client';
 import ExcelJS from 'exceljs';
 
 /** Máximo de filas de datos que se procesan en una sola carga masiva. */
@@ -82,98 +83,105 @@ export class IngredientService {
    */
   async createIngredient(data: {
     name: string;
-    description?: string;
+    description?: string | null;
     measurementUnit: string;
     currentStock?: number;
     minimumStock?: number;
     unitCost?: number;
   }) {
-    const ingredient = await prisma.ingredient.create({
-      data: {
-        name: data.name,
-        description: data.description,
-        measurementUnit: data.measurementUnit,
-        currentStock: data.currentStock || 0,
-        minimumStock: data.minimumStock || 0,
-        unitCost: data.unitCost || 0
-      }
-    });
-
-    // Si se especificó un stock inicial mayor a 0, registrar movimiento inicial en Kardex
-    if (ingredient.currentStock > 0) {
-      await prisma.inventoryMovement.create({
+    // El insumo y su movimiento inicial se guardan juntos o no se guarda nada
+    return prisma.$transaction(async (tx) => {
+      const ingredient = await tx.ingredient.create({
         data: {
-          ingredientId: ingredient.id,
-          type: 'IN',
-          reason: 'PURCHASE',
-          quantity: ingredient.currentStock,
-          previousStock: 0,
-          newStock: ingredient.currentStock,
-          reference: 'Initial Stock'
+          name: data.name,
+          description: data.description,
+          measurementUnit: data.measurementUnit,
+          currentStock: data.currentStock || 0,
+          minimumStock: data.minimumStock || 0,
+          unitCost: data.unitCost || 0
         }
       });
-    }
 
-    return ingredient;
+      // Si se especificó un stock inicial mayor a 0, registrar movimiento inicial en Kardex
+      if (ingredient.currentStock > 0) {
+        await tx.inventoryMovement.create({
+          data: {
+            ingredientId: ingredient.id,
+            type: 'IN',
+            reason: 'PURCHASE',
+            quantity: ingredient.currentStock,
+            previousStock: 0,
+            newStock: ingredient.currentStock,
+            reference: 'Initial Stock'
+          }
+        });
+      }
+
+      return ingredient;
+    });
   }
 
   /**
    * Actualiza la información de un insumo o realiza un ajuste manual de stock acumulado.
+   * El ajuste y su movimiento de Kardex se guardan juntos en una transacción.
+   * `description: null` limpia la descripción.
    * @param id ID del insumo
    * @param data Datos a actualizar y ajuste opcional de stock
    */
   async updateIngredient(id: number, data: {
     name?: string;
-    description?: string;
+    description?: string | null;
     measurementUnit?: string;
     minimumStock?: number;
     unitCost?: number;
     active?: boolean;
     adjustStock?: number;
-    adjustReason?: 'PURCHASE' | 'SALE' | 'WASTE' | 'MANUAL_ADJUSTMENT';
+    adjustReason?: MovementReason;
   }) {
-    const existing = await prisma.ingredient.findUnique({ where: { id } });
-    if (!existing) {
-      throw new Error('INGREDIENT_NOT_FOUND');
-    }
-
-    let newStock = existing.currentStock;
-
-    // Procesar ajuste de stock manual si se especificó la cantidad
-    if (data.adjustStock !== undefined && data.adjustStock !== null) {
-      const adjustmentQty = Number(data.adjustStock);
-      newStock = existing.currentStock + adjustmentQty;
-
-      // Validación: El stock en bodega no puede quedar en valores negativos
-      if (newStock < 0) {
-        throw new Error('STOCK_CANNOT_BE_NEGATIVE');
+    return prisma.$transaction(async (tx) => {
+      const existing = await tx.ingredient.findUnique({ where: { id } });
+      if (!existing) {
+        throw new Error('INGREDIENT_NOT_FOUND');
       }
 
-      // Registrar la entrada o salida en el historial de Kardex
-      await prisma.inventoryMovement.create({
+      let newStock = existing.currentStock;
+
+      // Procesar ajuste de stock manual si se especificó la cantidad
+      if (data.adjustStock !== undefined && data.adjustStock !== null) {
+        const adjustmentQty = Number(data.adjustStock);
+        newStock = existing.currentStock + adjustmentQty;
+
+        // Validación: El stock en bodega no puede quedar en valores negativos
+        if (newStock < 0) {
+          throw new Error('STOCK_CANNOT_BE_NEGATIVE');
+        }
+
+        // Registrar la entrada o salida en el historial de Kardex
+        await tx.inventoryMovement.create({
+          data: {
+            ingredientId: id,
+            type: adjustmentQty >= 0 ? 'IN' : 'OUT',
+            reason: data.adjustReason || 'MANUAL_ADJUSTMENT',
+            quantity: Math.abs(adjustmentQty),
+            previousStock: existing.currentStock,
+            newStock: newStock,
+            reference: 'Manual Adjustment'
+          }
+        });
+      }
+
+      return tx.ingredient.update({
+        where: { id },
         data: {
-          ingredientId: id,
-          type: adjustmentQty >= 0 ? 'IN' : 'OUT',
-          reason: data.adjustReason || 'MANUAL_ADJUSTMENT',
-          quantity: Math.abs(adjustmentQty),
-          previousStock: existing.currentStock,
-          newStock: newStock,
-          reference: 'Manual Adjustment'
+          name: data.name !== undefined ? data.name : existing.name,
+          description: data.description !== undefined ? data.description : existing.description,
+          measurementUnit: data.measurementUnit !== undefined ? data.measurementUnit : existing.measurementUnit,
+          minimumStock: data.minimumStock !== undefined ? data.minimumStock : existing.minimumStock,
+          unitCost: data.unitCost !== undefined ? data.unitCost : existing.unitCost,
+          active: data.active !== undefined ? data.active : existing.active,
+          currentStock: newStock
         }
       });
-    }
-
-    return prisma.ingredient.update({
-      where: { id },
-      data: {
-        name: data.name !== undefined ? data.name : existing.name,
-        description: data.description !== undefined ? data.description : existing.description,
-        measurementUnit: data.measurementUnit !== undefined ? data.measurementUnit : existing.measurementUnit,
-        minimumStock: data.minimumStock !== undefined ? data.minimumStock : existing.minimumStock,
-        unitCost: data.unitCost !== undefined ? data.unitCost : existing.unitCost,
-        active: data.active !== undefined ? data.active : existing.active,
-        currentStock: newStock
-      }
     });
   }
 
