@@ -17,24 +17,19 @@ Implementación de referencia: `frontend/src/app/inventory/` (`inventoryService.
 
 ## Service
 
-Va en el `<feature>Service.js` de la feature, que ya define `safeFetch` (envoltorio de `fetch` que traduce el "Failed to fetch" del navegador; ver `frontend-api-service`).
+Va en el `<feature>Service.js` de la feature, sobre la capa HTTP compartida (`requestBlob` y `requestJson` de `config/apiFetch.js`; ver `frontend-api-service`): ella manda el token, traduce el error de red a español y cierra la sesión ante un 401. **Las descargas nunca van por un enlace directo** (`<a href>`, `window.open`): el navegador no puede mandar la cabecera `Authorization` y la API respondería 401; hay que pedir el `Blob` con `requestBlob` y crear el enlace de descarga desde él.
 
 ```js
+import { requestBlob, requestJson } from '../../../config/apiFetch';
+
 /**
  * Downloads a binary file from the backend and triggers the browser's save dialog.
  * @param {string} url
  * @param {string} filename   name suggested to the user
- * @param {string} failureMessage
+ * @param {string} failureMessage generic Spanish error text (without the "Error (N):" prefix)
  */
 async function downloadFile(url, filename, failureMessage) {
-  const response = await safeFetch(url, { method: 'GET' });
-
-  if (!response.ok) {
-    const errorData = await response.json().catch(() => ({}));
-    throw new Error(errorData.error || `Error (${response.status}): ${failureMessage}`);
-  }
-
-  const blob = await response.blob();
+  const blob = await requestBlob(url, {}, failureMessage);
   const objectUrl = window.URL.createObjectURL(blob);
   const link = document.createElement('a');
   link.href = objectUrl;
@@ -55,22 +50,16 @@ export const exportSuppliersReport = () =>
  * @param {File} file
  * @returns {Promise<{ message: string, summary: { created: number, updated: number, skipped: number, errors: string[] } }>}
  */
-export async function importSuppliersExcel(file) {
+export function importSuppliersExcel(file) {
   const formData = new FormData();
   formData.append('file', file); // field name must be "file" (multer.single('file'))
 
-  // Do NOT set Content-Type: the browser adds multipart/form-data with its boundary
-  const response = await safeFetch(SUPPLIER_ENDPOINTS.IMPORT, { method: 'POST', body: formData });
-
-  const data = await response.json().catch(() => ({}));
-  if (!response.ok) {
-    throw new Error(data.error || `Error (${response.status}): Falló la importación masiva.`);
-  }
-  return data;
+  // With FormData, requestJson does NOT set Content-Type: the browser adds multipart/form-data with its boundary
+  return requestJson(SUPPLIER_ENDPOINTS.IMPORT, { method: 'POST', body: formData }, 'Falló la importación masiva.');
 }
 ```
 
-`inventoryService.js` repite el bloque de descarga en dos funciones. Si una segunda feature necesita descargas, mueve `downloadFile` a `frontend/src/app/common/fileUtils.js` y úsalo desde ambas (no copies una tercera vez).
+`inventoryService.js` ya tiene su `downloadFile` (un solo bloque de descarga para plantilla y reporte). Si una segunda feature necesita descargas, mueve `downloadFile` a `frontend/src/app/common/fileUtils.js` y úsalo desde ambas (no copies una segunda vez). En el servidor, importar es solo ADMIN (403 al trabajador) y descargar plantilla/reporte es para todos.
 
 ## Modal de importación (`BulkImportModal.jsx`)
 

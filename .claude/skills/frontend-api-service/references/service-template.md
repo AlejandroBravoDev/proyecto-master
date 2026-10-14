@@ -1,10 +1,14 @@
 # Plantillas de `endpoints.js` y service (ejemplo: Suppliers)
 
+Todas las llamadas pasan por la capa HTTP compartida `frontend/src/config/apiFetch.js` (`requestJson`, `requestBlob`): ella añade el token, traduce el error de red a español, interpreta el `{ error }` del backend y cierra la sesión ante un 401. El service **no** define `safeFetch` ni `extractErrorMessage` ni llama a `fetch`.
+
 ## Contenido
 - endpoints.js
 - supplierService.js (CRUD completo)
 - Variante: PATCH de estado
-- Variante compacta con helper `request()`
+- Variante: descarga (blob) y subida (multipart)
+- Petición pública (`skipAuth`)
+- Qué responde la capa ante un error
 
 ## endpoints.js
 
@@ -29,55 +33,21 @@ export const SUPPLIER_ENDPOINTS = {
 // frontend/src/app/suppliers/services/supplierService.js
 /**
  * Suppliers Service Layer
- * Handles all HTTP requests for the suppliers module.
+ * Handles all HTTP requests for the suppliers module through the shared HTTP layer
+ * (token, 401 handling and Spanish error messages live in config/apiFetch.js).
  */
 
+import { requestJson } from '../../../config/apiFetch';
 import { SUPPLIER_ENDPOINTS } from './endpoints';
-
-/**
- * fetch() rejects with TypeError("Failed to fetch") when the server is unreachable
- * (backend stopped, no network, CORS). Surface a Spanish message instead of the raw browser text.
- */
-async function safeFetch(url, options) {
-  try {
-    return await fetch(url, options);
-  } catch {
-    throw new Error('No se pudo conectar con el servidor. Verifica tu conexión o que el backend esté en ejecución.');
-  }
-}
-
-/**
- * Builds the user-facing message from a failed backend response body.
- * The backend answers errors as { error: 'message', details?: ... }.
- * @param {Object|null} errorData
- * @param {string} fallbackMessage
- * @returns {string}
- */
-function extractErrorMessage(errorData, fallbackMessage) {
-  if (!errorData) return fallbackMessage;
-  return errorData.error || errorData.message || fallbackMessage;
-}
 
 /**
  * Fetches suppliers, optionally filtered by a search term.
  * @param {string} [searchTerm='']
  * @returns {Promise<Array>}
  */
-export async function fetchSuppliers(searchTerm = '') {
+export function fetchSuppliers(searchTerm = '') {
   const query = searchTerm ? `?search=${encodeURIComponent(searchTerm)}` : '';
-  const response = await safeFetch(`${SUPPLIER_ENDPOINTS.SUPPLIERS}${query}`, {
-    method: 'GET',
-    headers: {
-      'Accept': 'application/json',
-    },
-  });
-
-  if (!response.ok) {
-    const errorData = await response.json().catch(() => ({}));
-    throw new Error(extractErrorMessage(errorData, `Error (${response.status}): No se pudieron cargar los proveedores.`));
-  }
-
-  return response.json();
+  return requestJson(`${SUPPLIER_ENDPOINTS.SUPPLIERS}${query}`, {}, 'No se pudieron cargar los proveedores.');
 }
 
 /**
@@ -85,43 +55,17 @@ export async function fetchSuppliers(searchTerm = '') {
  * @param {number|string} id
  * @returns {Promise<Object>}
  */
-export async function fetchSupplierDetail(id) {
-  const response = await safeFetch(SUPPLIER_ENDPOINTS.SUPPLIER_DETAIL(id), {
-    method: 'GET',
-    headers: {
-      'Accept': 'application/json',
-    },
-  });
-
-  if (!response.ok) {
-    const errorData = await response.json().catch(() => ({}));
-    throw new Error(extractErrorMessage(errorData, `Error (${response.status}): No se pudo obtener el proveedor.`));
-  }
-
-  return response.json();
+export function fetchSupplierDetail(id) {
+  return requestJson(SUPPLIER_ENDPOINTS.SUPPLIER_DETAIL(id), {}, 'No se pudo obtener el proveedor.');
 }
 
 /**
- * Creates a supplier.
+ * Creates a supplier (admin only on the server).
  * @param {{ name: string, phone?: string|null, email?: string|null }} data
  * @returns {Promise<Object>}
  */
-export async function createSupplier(data) {
-  const response = await safeFetch(SUPPLIER_ENDPOINTS.SUPPLIERS, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'Accept': 'application/json',
-    },
-    body: JSON.stringify(data),
-  });
-
-  if (!response.ok) {
-    const errorData = await response.json().catch(() => ({}));
-    throw new Error(extractErrorMessage(errorData, `Error (${response.status}): No se pudo crear el proveedor.`));
-  }
-
-  return response.json();
+export function createSupplier(data) {
+  return requestJson(SUPPLIER_ENDPOINTS.SUPPLIERS, { method: 'POST', body: data }, 'No se pudo crear el proveedor.');
 }
 
 /**
@@ -130,45 +74,21 @@ export async function createSupplier(data) {
  * @param {{ name?: string, phone?: string|null, email?: string|null, active?: boolean }} data
  * @returns {Promise<Object>}
  */
-export async function updateSupplier(id, data) {
-  const response = await safeFetch(SUPPLIER_ENDPOINTS.SUPPLIER_DETAIL(id), {
-    method: 'PUT',
-    headers: {
-      'Content-Type': 'application/json',
-      'Accept': 'application/json',
-    },
-    body: JSON.stringify(data),
-  });
-
-  if (!response.ok) {
-    const errorData = await response.json().catch(() => ({}));
-    throw new Error(extractErrorMessage(errorData, `Error (${response.status}): No se pudo actualizar el proveedor.`));
-  }
-
-  return response.json();
+export function updateSupplier(id, data) {
+  return requestJson(SUPPLIER_ENDPOINTS.SUPPLIER_DETAIL(id), { method: 'PUT', body: data }, 'No se pudo actualizar el proveedor.');
 }
 
 /**
- * Deletes a supplier by ID.
+ * Deletes a supplier by ID. The backend answers 400 (with a Spanish message) if it has related records.
  * @param {number|string} id
  * @returns {Promise<{ message: string }>}
  */
-export async function deleteSupplier(id) {
-  const response = await safeFetch(SUPPLIER_ENDPOINTS.SUPPLIER_DETAIL(id), {
-    method: 'DELETE',
-    headers: {
-      'Accept': 'application/json',
-    },
-  });
-
-  if (!response.ok) {
-    const errorData = await response.json().catch(() => ({}));
-    throw new Error(extractErrorMessage(errorData, `Error (${response.status}): No se pudo eliminar el proveedor.`));
-  }
-
-  return response.json();
+export function deleteSupplier(id) {
+  return requestJson(SUPPLIER_ENDPOINTS.SUPPLIER_DETAIL(id), { method: 'DELETE' }, 'No se pudo eliminar el proveedor.');
 }
 ```
+
+El tercer argumento es el mensaje genérico **sin prefijo**: si el backend no manda `{ error }`, la capa lo convierte en `Error (<status>): No se pudo crear el proveedor.`.
 
 ## Variante: PATCH de estado
 
@@ -177,45 +97,51 @@ export async function deleteSupplier(id) {
 SUPPLIER_STATUS: (id) => `${getApiBaseUrl()}/api/suppliers/${id}/status`,
 
 // supplierService.js
-export async function updateSupplierStatus(id, active) {
-  const response = await safeFetch(SUPPLIER_ENDPOINTS.SUPPLIER_STATUS(id), {
-    method: 'PATCH',
-    headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
-    body: JSON.stringify({ active }),
-  });
-
-  if (!response.ok) {
-    const errorData = await response.json().catch(() => ({}));
-    throw new Error(extractErrorMessage(errorData, `Error (${response.status}): No se pudo cambiar el estado.`));
-  }
-
-  return response.json();
+export function updateSupplierStatus(id, active) {
+  return requestJson(SUPPLIER_ENDPOINTS.SUPPLIER_STATUS(id), { method: 'PATCH', body: { active } }, 'No se pudo cambiar el estado.');
 }
 ```
 
-## Variante compacta con helper `request()`
-
-Permitida en archivos nuevos cuando el service tiene más de ~5 funciones (reduce el boilerplate sin cambiar el comportamiento). El helper es local al archivo.
+## Variante: descarga (blob) y subida (multipart)
 
 ```js
-async function request(url, { method = 'GET', body } = {}, fallbackMessage) {
-  const response = await safeFetch(url, {
-    method,
-    headers: {
-      'Accept': 'application/json',
-      ...(body !== undefined ? { 'Content-Type': 'application/json' } : {}),
-    },
-    ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
-  });
+import { requestBlob, requestJson } from '../../../config/apiFetch';
 
-  if (!response.ok) {
-    const errorData = await response.json().catch(() => ({}));
-    throw new Error(extractErrorMessage(errorData, `Error (${response.status}): ${fallbackMessage}`));
-  }
-
-  return response.json();
+// Descarga: requestBlob lleva el token como cualquier petición (un <a href> o window.open NO puede mandarlo)
+export async function downloadSuppliersReport() {
+  const blob = await requestBlob(SUPPLIER_ENDPOINTS.EXPORT, {}, 'No se pudo exportar el reporte.');
+  // ... crear un object URL y disparar la descarga (ver frontend-excel-import-export)
+  return blob;
 }
 
-export const fetchSuppliers = () => request(SUPPLIER_ENDPOINTS.SUPPLIERS, {}, 'No se pudieron cargar los proveedores.');
-export const createSupplier = (data) => request(SUPPLIER_ENDPOINTS.SUPPLIERS, { method: 'POST', body: data }, 'No se pudo crear el proveedor.');
+// Subida: con FormData requestJson NO pone Content-Type (el navegador añade el boundary)
+export function importSuppliersExcel(file) {
+  const formData = new FormData();
+  formData.append('file', file); // el campo se llama "file" (multer.single('file'))
+  return requestJson(SUPPLIER_ENDPOINTS.IMPORT, { method: 'POST', body: formData }, 'Falló la importación masiva.');
+}
 ```
+
+## Petición pública (`skipAuth`)
+
+Solo el login es público. `skipAuth: true` envía la petición sin token y evita que un 401 ("credenciales incorrectas") cierre la sesión:
+
+```js
+// frontend/src/app/auth/services/authService.js
+export async function loginUser(credentials) {
+  const data = await requestJson(AUTH_ENDPOINTS.LOGIN, { method: 'POST', body: credentials, skipAuth: true }, 'Credenciales inválidas.');
+  // ... valida { user, token } y devuélvelos; AuthContext guarda la sesión
+}
+```
+
+No uses `skipAuth` en ninguna otra ruta: el test de estructura exige que solo aparezca en `authService.js` y `apiFetch.js`.
+
+## Qué responde la capa ante un error
+
+| Situación | `Error.message` que recibe tu `catch` |
+|---|---|
+| El backend responde `{ error: 'texto' }` (400, 403, 404...) | `texto` (+ `: details` solo si `details` es texto) |
+| El backend no manda `{ error }` o el cuerpo no es JSON (p. ej. un 502 de un proxy) | `Error (<status>): <mensaje genérico>` |
+| Servidor caído, sin red o CORS | `No se pudo conectar con el servidor. Verifica tu conexión o que el backend esté en ejecución.` |
+| 401 con token | igual que arriba **y además** la sesión se cierra y la app vuelve a `/login` con aviso (no tienes que hacer nada) |
+| 403 | el texto del servidor; la sesión sigue abierta: muéstralo con `showErrorAlert` |

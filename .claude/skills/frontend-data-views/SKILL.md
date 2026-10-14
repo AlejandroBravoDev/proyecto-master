@@ -28,8 +28,9 @@ Toda pantalla de datos de MasterFood resuelve las mismas cuatro cosas: **traer, 
 - Componente común: `import Pagination, { ITEMS_PER_PAGE } from '../../common/Pagination';` (`ITEMS_PER_PAGE = 15`). Se renderiza dentro del contenedor de la tabla, con `currentPage`, `totalItems`, `itemsPerPage`, `onPageChange`. Se oculta solo si `totalItems <= 0`.
 - Se pagina **en cliente**: `safePage = Math.min(Math.max(1, page), totalPages)` y `items.slice((safePage-1)*N, safePage*N)` dentro de `useMemo`.
 - **Vuelve a la página 1** cuando cambie el buscador o un filtro (`useEffect(() => setCurrentPage(1), [searchTerm, activeFilter])`); si no, puedes quedar en una página que ya no existe.
-- Si el backend no pagina, no finjas paginación de servidor (hoy `GET /api/users` ignora `page/limit`). Cuando los volúmenes lo exijan, implementa paginación en backend (`{ total, page, limit, totalPages, items }`, ver `backend-new-module`) y deja de rebanar en el cliente.
-- No dupliques la paginación: `UsersTable` trae una propia por historia; en código nuevo usa `Pagination`.
+- Si el backend no pagina, no finjas paginación de servidor. Hoy paginan en el servidor (cuando envías `page`/`limit`, con la forma `{ total, page, limit, totalPages, <items> }`) `GET /api/users`, `GET /api/caja/history` e `GET /api/inventory/movements`; el resto devuelve la lista completa. Cuando los volúmenes lo exijan, implementa paginación en backend (ver `backend-new-module`) y deja de rebanar en el cliente.
+- **Con paginación de servidor, el buscador del cliente solo filtra la página cargada** (así pasa hoy en `UsersPage`: no hay búsqueda global; haría falta un `?search=` en el backend). Dilo al usuario si añades un buscador sobre datos paginados en el servidor.
+- No dupliques la paginación: todas las tablas usan el componente común `Pagination` (`UsersTable` también); `UsersPage` es el modelo de una página que pagina en servidor cuando el backend devuelve solo una porción.
 
 ## 4. Los tres estados (siempre)
 
@@ -39,8 +40,8 @@ Orden de decisión en el JSX de la página: `loading` -> `error` -> `vacío` -> 
 
 - `key` estable con el `id` del registro (no el índice).
 - Acciones por fila reciben el **objeto** (`onEdit(item)`), no el id, así la página no tiene que buscarlo.
-- Acciones que dependen del rol se ocultan con `isAdmin` (prop con default explícito). Recuerda que es solo UI.
-- Cifras alineadas a la derecha (`text-right`), fechas con el `formatDate` del `utils`, dinero con `formatCurrency`.
+- Acciones que dependen del rol se ocultan con `isAdmin` (prop con default explícito). El servidor valida el rol igualmente (403), así que lo que la UI ofrezca al WORKER tiene que estar permitido en `roleMatrix.ts`.
+- Cifras alineadas a la derecha (`text-right`), fechas con el `formatDate` del `utils`, dinero con el `formatCurrency` único (`common/formatCurrency.js`, reexportado por los `utils`; "US$ 1.299,50").
 - Textos largos: `truncate` / `line-clamp-2`; tablas dentro de `overflow-x-auto`.
 - Evita `useEffect` que dependa de un arreglo recreado en cada render (provoca bucles): memoriza con `useMemo`.
 - Interacción no destructiva (marcar disponible, activar) puede ser optimista, pero siempre termina en `loadData()` para reflejar el servidor.

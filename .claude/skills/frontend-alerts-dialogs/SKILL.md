@@ -41,14 +41,15 @@ const handleDelete = async (item) => {
 
 ## Reglas
 
-1. **El texto debe ser verdad.** Describe lo que realmente hace el backend (borrar un producto elimina también sus líneas de comanda y venta; eliminar una categoría con productos falla). No prometas comportamientos que el servidor no implementa.
+1. **El texto debe ser verdad.** Describe lo que realmente hace el backend (borrar un producto sin historial lo elimina con su receta, y con comandas o ventas el servidor responde 400 "desactívalo en lugar de eliminarlo"; eliminar una categoría con productos responde 400 con la cuenta; eliminar una comanda devuelve el stock al Kardex). No prometas comportamientos que el servidor no implementa. El ejemplo vivo es el `confirmDialog` de `ProductsPage`.
 2. **Título con el nombre del elemento** (`¿Eliminar "X"?`), botón de confirmación con el verbo (`Sí, desactivar`, `Sí, cerrar caja`), cancelar con "Cancelar" o una alternativa clara ("Revisar conteo").
 3. **Dónde mostrar cada error**: validación de formulario -> banner dentro del modal; fallo del servidor tras confirmar -> `showErrorAlert`; en un modal cuyo `onSubmit` lanza, el modal muestra el error y, si la página ya lo mostró con `showErrorAlert`, vuelve a lanzar (`throw err`) para que el modal permanezca abierto.
 4. **Doble clic mientras hay un diálogo**: si un envío espera un `confirmDialog`, activa la bandera `isSubmittingRef.current = true` antes del `await` y restáurala si el usuario cancela (patrón de `CloseCajaModal`).
 5. **Limpieza en `finally`**: cualquier estado de carga (`setSaving(false)`, `deletingId`) se restablece en `finally` para no dejar botones deshabilitados.
 6. **Mensajes de éxito** en pasado, cortos y en español: "Producto eliminado del menú.", "Trabajador activado con éxito."
-7. **Sin toasts propios**: `ProductsPage` e `InventoryPage` aún tienen un `showToast` local (legado, y su animación `animate-slide-up` ni existe). En código nuevo usa `showSuccessToast`/`showErrorAlert`.
-8. **Nuevos tipos de alerta** (info, aviso): agrégalos en `alertUtils.js` reutilizando los colores (`#E63946` confirmar, `#94a3b8` cancelar) y las clases `rounded-3xl`/`rounded-2xl` de los existentes; no llames a `Swal.fire` suelto en componentes.
+7. **Sin toasts propios**: todas las páginas (incluidas `ProductsPage` e `InventoryPage`) usan `showSuccessToast`/`showErrorAlert`; no vuelvas a crear un `showToast` con estado local (`project-structure.test.js` lo vigila).
+8. **Errores de sesión y de permisos**: un **401** no se muestra con `showErrorAlert`: la capa HTTP (`config/apiFetch.js`) ya cerró la sesión y la app vuelve a `/login` con su propio aviso. Un **403** sí: el `Error` trae el texto del servidor ("No tienes permisos para realizar esta acción.") y se muestra con `showErrorAlert` como cualquier otro fallo (la sesión sigue abierta).
+9. **Nuevos tipos de alerta** (info, aviso): agrégalos en `alertUtils.js` reutilizando los colores (`#E63946` confirmar, `#94a3b8` cancelar) y las clases `rounded-3xl`/`rounded-2xl` de los existentes; no llames a `Swal.fire` suelto en componentes.
 
 ## Terminado cuando
 

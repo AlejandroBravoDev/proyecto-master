@@ -28,7 +28,7 @@ Archivos de componentes en PascalCase, services/utils en camelCase. Ruta de URL 
 
 1. **Define** la feature: nombre, ruta, icono lucide, quién la ve (todos / solo admin), qué endpoints usa. Si el backend aún no existe, hazlo primero (`backend-new-module`) o acuerda el contrato en `fullstack-domain-reference/references/api-endpoints.md`.
 2. **`services/`**: `endpoints.js` y `<feature>Service.js` (skill `frontend-api-service`).
-3. **`utils/`**: constantes y formateadores puros (sin hooks ni JSX): mapas `{ label, badgeClass }` para estados, `formatCurrency`/`formatDate` locales, validadores. Mantén en `utils/` todo cálculo que no necesite React.
+3. **`utils/`**: constantes y formateadores puros (sin hooks ni JSX): mapas `{ label, badgeClass }` para estados, `formatDate` y validadores; para dinero **reexporta** el formateador único (`export { formatCurrency } from '../../common/formatCurrency'`), no crees otro. Mantén en `utils/` todo cálculo que no necesite React.
 4. **`components/`**: presentacionales y controlados por props; no llaman a `fetch`.
    - header card + listado -> `frontend-data-views`
    - modal crear/editar -> `frontend-modal-form`
@@ -45,7 +45,7 @@ Archivos de componentes en PascalCase, services/utils en camelCase. Ruta de URL 
 - `loadData = useCallback(() => { setLoading(true); setError(null); service().then(set...).catch(setError) }, [])` y `useEffect(() => { loadData(); }, [loadData])`. Mensaje de error de respaldo: `'No se pudo conectar con el servidor para cargar ...'`.
 - Render en este orden: `loading` (skeleton) -> `error` (tarjeta + Reintentar) -> vacío -> contenido. Los modales se montan siempre al final (se auto-ocultan con `isOpen`).
 - Handlers de escritura en la página: `handleSave` (crear/editar), `handleDelete` (con `confirmDialog`), acciones de estado. Tras éxito: `showSuccessToast(...)` y `loadData()`. Errores: `showErrorAlert` o el banner del modal (`frontend-alerts-dialogs`).
-- Roles: `const { isAdmin } = useAuth();` (de `../auth/AuthContext`) y pasa `isAdmin` a header/tabla/tarjetas con default explícito; oculta crear/editar/eliminar si no es admin. Si **toda** la pantalla es solo admin, protege además la ruta. Es restricción de interfaz, no de seguridad (el servidor no valida roles).
+- Roles: `const { isAdmin } = useAuth();` (de `../auth/AuthContext`) y pasa `isAdmin` a header/tabla/tarjetas con default explícito; oculta crear/editar/eliminar si no es admin. Si **toda** la pantalla es solo admin, protege además la ruta. Esto es comodidad de interfaz: **el servidor valida los roles** (403), así que el rol de cada endpoint que use la pantalla ya debe estar decidido y declarado en `backend/tests/helpers/roleMatrix.ts` (`backend-new-module`); comprueba que lo que envía la pantalla a un WORKER es lo que el servidor le admite. Un 401 no lo manejas tú: la capa HTTP devuelve a `/login`.
 - `useEffect`/`useCallback` con dependencias completas; nada de `fetch` ni URLs en la página.
 - Mensajes y textos de UI en español; comentarios/JSDoc en inglés.
 
@@ -76,7 +76,7 @@ El router es `createHashRouter`: la URL real es `/#/proveedores`. El ítem activ
 
 ## Terminado cuando
 
-- [ ] Carpeta con `services/`, `components/`, `utils/` y la Page; sin `fetch` fuera de `services/`.
+- [ ] Carpeta con `services/`, `components/`, `utils/` y la Page; services sobre `config/apiFetch.js` y sin `fetch` en ningún otro sitio.
 - [ ] Ruta y entrada de menú registradas; rol correcto en ambas.
 - [ ] Estados cargando / error con Reintentar / vacío verificados; crear, editar y eliminar probados con el backend real.
 - [ ] `npm run build` sin errores; `node .claude/skills/fullstack-verify-changes/scripts/preflight.mjs` sin hallazgos nuevos.

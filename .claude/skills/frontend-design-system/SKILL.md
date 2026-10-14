@@ -31,25 +31,13 @@ Colores semánticos (Tailwind estándar): **emerald** = éxito/abierto/disponibl
 5. **Estados obligatorios** en toda pantalla de datos: cargando (skeleton `animate-pulse`), error (tarjeta rosa con "Reintentar"), vacío (icono + título + pista + CTA si el rol puede crear).
 6. **Responsive**: la app está pensada para **tablet (>= 768 px) y escritorio**: el `Sidebar` es fijo (`w-64`, o `w-20` colapsado) y no hay menú móvil, y `index.html` no declara `<meta name="viewport">` (un teléfono renderiza a 980 px y no activa los breakpoints). Escribe las clases en orden base -> `sm:` -> `md:` -> `lg:` (`grid-cols-1 sm:grid-cols-2 lg:grid-cols-3`, filas `flex-col md:flex-row`) y mete las tablas en `overflow-x-auto`; comprueba a 768 px y a 1280 px. Soporte de móvil real sería un cambio global propio (viewport meta + sidebar colapsable).
 7. **Iconos**: `lucide-react` (verifica que el nombre exista: un import inexistente rompe el build). En el título de un modal, un cuadro `w-9 h-9 rounded-xl` con el icono `w-5 h-5`.
-8. **Moneda**: usa el `formatCurrency` del `utils` de la feature. Ojo: hoy hay dos locales (`es-CO` -> "US$ 7,50" y `en-US` -> "$7.50"); en una feature nueva copia el de la feature más parecida y no mezcles dos formatos en la misma pantalla.
+8. **Moneda**: un solo formateador, `frontend/src/app/common/formatCurrency.js` (`es-CO`, USD, 2 decimales: "US$ 1.299,50"; un valor vacío o no numérico se muestra como cero). Los `utils` de cada feature lo **reexportan** (`export { formatCurrency } from '../../common/formatCurrency'`): impórtalo desde el `utils` de la feature o directamente de `common/`, y **nunca** crees otro `Intl.NumberFormat` de moneda (`project-structure.test.js` lo prohíbe).
 
-## Animaciones: brecha conocida
+## Animaciones
 
-`animate-fade-in`, `animate-slide-up` y `animate-shake` aparecen en ~19 archivos pero **no están definidas**, así que no hacen nada (solo `animate-spin`, `animate-pulse` y `animate-ping` existen). Para activarlas, define en `frontend/src/index.css` dentro de `@theme` (Tailwind 4) -- solo si el usuario lo pide, es un cambio global:
-
-```css
-@theme {
-  --animate-fade-in: fade-in 0.2s ease-out;
-  --animate-slide-up: slide-up 0.25s ease-out;
-  --animate-shake: shake 0.4s ease-in-out;
-
-  @keyframes fade-in { from { opacity: 0; } to { opacity: 1; } }
-  @keyframes slide-up { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: translateY(0); } }
-  @keyframes shake { 0%, 100% { transform: translateX(0); } 20%, 60% { transform: translateX(-6px); } 40%, 80% { transform: translateX(6px); } }
-}
-```
-
-Mientras no existan, no dependas de ellas para comunicar nada importante.
+`animate-fade-in` (0.2 s), `animate-slide-up` (0.25 s) y `animate-shake` (0.4 s) están **definidas** en el `@theme` de `frontend/src/index.css` junto con sus `@keyframes`, y se desactivan con `@media (prefers-reduced-motion: reduce)`. Úsalas para entradas de modales, páginas y banners de error (fade-in / slide-up / shake respectivamente), junto a las de Tailwind (`animate-spin`, `animate-pulse`, `animate-ping`). Reglas:
+- No uses una clase `animate-*` que no esté en Tailwind ni en `index.css`: no genera CSS (el test `project-structure.test.js` falla y el preflight avisa con `FE-UNDEFINED-ANIMATION`).
+- Para una animación nueva: `--animate-<nombre>` + `@keyframes` dentro de `@theme`, **sobria (< 0.5 s)**, añadida al bloque `prefers-reduced-motion` (los tres tests de ese archivo lo exigen). Es un cambio global: hazlo solo si el usuario lo pide.
 
 ## Antes de dar por terminada una UI
 
