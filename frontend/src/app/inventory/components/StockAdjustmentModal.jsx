@@ -7,6 +7,7 @@ export default function StockAdjustmentModal({
   onClose,
   onSubmit,
   ingredient = null,
+  canEditUnitCost = true,
 }) {
   const [quantity, setQuantity] = useState(0);
   const [reason, setReason] = useState('PURCHASE');
@@ -63,11 +64,16 @@ export default function StockAdjustmentModal({
         finalAdjustStock = -Math.abs(numQuantity);
       }
 
-      await onSubmit(ingredient.id, {
+      // El servidor solo deja al trabajador enviar adjustStock y adjustReason: el costo unitario es del administrador.
+      const payload = {
         adjustStock: finalAdjustStock,
         adjustReason: reason,
-        unitCost: Number(unitCost) || ingredient.unitCost,
-      });
+      };
+      if (canEditUnitCost) {
+        payload.unitCost = Number(unitCost) || ingredient.unitCost;
+      }
+
+      await onSubmit(ingredient.id, payload);
       onClose();
     } catch (err) {
       setError(err.message || 'Error al procesar el ajuste de stock.');
@@ -157,7 +163,7 @@ export default function StockAdjustmentModal({
           </div>
 
           {/* Unit Cost if purchase */}
-          {reason === 'PURCHASE' && (
+          {reason === 'PURCHASE' && canEditUnitCost && (
             <div>
               <label className="block text-xs font-bold text-[#584235] mb-1">
                 Nuevo Costo Unitario de Compra ($)

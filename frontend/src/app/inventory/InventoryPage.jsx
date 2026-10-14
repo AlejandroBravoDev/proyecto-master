@@ -317,6 +317,7 @@ export default function InventoryPage() {
         onClose={() => setAdjustmentModalOpen(false)}
         onSubmit={handleSaveAdjustment}
         ingredient={adjustmentIngredient}
+        canEditUnitCost={isAdmin}
       />
 
       {/* Modal: View Kardex History */}
