@@ -8,8 +8,12 @@
 
 import { Router } from 'express';
 import { categoryController } from '../controllers/category.controller';
+import { validateIdParam } from '../utils/http.utils';
 
 const router = Router();
+
+// Un :id que no sea entero positivo responde 400 en lugar de llegar a Prisma (500)
+router.param('id', validateIdParam);
 
 // Endpoint GET: Lista todas las categorías
 router.get('/', (req, res) => categoryController.getCategories(req, res));

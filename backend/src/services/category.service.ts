@@ -39,16 +39,16 @@ export class CategoryService {
    * Registra una nueva categoría en la base de datos.
    * @param data Objeto con el nombre y descripción opcional
    */
-  async createCategory(data: { name: string; description?: string }) {
+  async createCategory(data: { name: string; description?: string | null }) {
     return prisma.category.create({ data });
   }
 
   /**
    * Actualiza los datos de una categoría existente.
    * @param id ID de la categoría a modificar
-   * @param data Campos a actualizar (nombre, descripción)
+   * @param data Campos a actualizar (nombre, descripción; `description: null` la limpia)
    */
-  async updateCategory(id: number, data: { name?: string; description?: string }) {
+  async updateCategory(id: number, data: { name?: string; description?: string | null }) {
     return prisma.category.update({
       where: { id },
       data
@@ -57,11 +57,25 @@ export class CategoryService {
 
   /**
    * Elimina una categoría de la base de datos.
+   * Una categoría con productos no se puede eliminar (`category_id` es obligatorio en el producto):
+   * lanza `CATEGORY_HAS_PRODUCTS:<cantidad>`.
    * @param id ID de la categoría a eliminar
    */
   async deleteCategory(id: number) {
-    return prisma.category.delete({
-      where: { id }
+    return prisma.$transaction(async (tx) => {
+      const category = await tx.category.findUnique({
+        where: { id },
+        include: { _count: { select: { products: true } } }
+      });
+
+      if (!category) {
+        throw new Error('CATEGORY_NOT_FOUND');
+      }
+      if (category._count.products > 0) {
+        throw new Error(`CATEGORY_HAS_PRODUCTS:${category._count.products}`);
+      }
+
+      return tx.category.delete({ where: { id } });
     });
   }
 }
