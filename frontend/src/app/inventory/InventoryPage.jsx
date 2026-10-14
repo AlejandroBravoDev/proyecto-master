@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { useSearchParams, useLocation } from 'react-router-dom';
-import { AlertCircle, RefreshCw, CheckCircle2, Layers, AlertTriangle } from 'lucide-react';
+import { AlertCircle, RefreshCw, Layers, AlertTriangle } from 'lucide-react';
 import InventoryHeaderCard from './components/InventoryHeaderCard';
 import IngredientTable from './components/IngredientTable';
 import IngredientModal from './components/IngredientModal';
@@ -16,7 +16,7 @@ import {
   downloadIngredientsTemplate,
   exportIngredientsReport,
 } from './services/inventoryService';
-import { confirmDialog, showErrorAlert } from '../common/alertUtils';
+import { confirmDialog, showErrorAlert, showSuccessToast } from '../common/alertUtils';
 import { useAuth } from '../auth/AuthContext';
 
 const ITEMS_PER_PAGE = 15;
@@ -90,14 +90,6 @@ export default function InventoryPage() {
 
   const [importModalOpen, setImportModalOpen] = useState(false);
 
-  // Toast feedback state
-  const [toast, setToast] = useState(null);
-
-  const showToast = (message, type = 'success') => {
-    setToast({ message, type });
-    setTimeout(() => setToast(null), 3500);
-  };
-
   // Load ingredients & alerts
   const loadData = useCallback(() => {
     setLoading(true);
@@ -134,10 +126,10 @@ export default function InventoryPage() {
   const handleSaveIngredient = async (formData) => {
     if (selectedIngredient) {
       await updateIngredient(selectedIngredient.id, formData);
-      showToast('Insumo actualizado correctamente.');
+      showSuccessToast('Insumo actualizado correctamente.');
     } else {
       await createIngredient(formData);
-      showToast('Insumo creado correctamente.');
+      showSuccessToast('Insumo creado correctamente.');
     }
     loadData();
   };
@@ -149,7 +141,7 @@ export default function InventoryPage() {
 
   const handleSaveAdjustment = async (id, adjustmentData) => {
     await updateIngredient(id, adjustmentData);
-    showToast('Ajuste de stock registrado en Kardex.');
+    showSuccessToast('Ajuste de stock registrado en Kardex.');
     loadData();
   };
 
@@ -169,7 +161,7 @@ export default function InventoryPage() {
     if (result.isConfirmed) {
       try {
         await deleteIngredient(item.id);
-        showToast('Insumo eliminado del inventario.');
+        showSuccessToast('Insumo eliminado del inventario.');
         loadData();
       } catch (err) {
         showErrorAlert('Error al eliminar insumo', err.message || 'No se pudo eliminar el insumo.');
@@ -182,9 +174,9 @@ export default function InventoryPage() {
     setDownloadingTemplate(true);
     try {
       await downloadIngredientsTemplate();
-      showToast('Plantilla descargada correctamente.');
+      showSuccessToast('Plantilla descargada correctamente.');
     } catch (err) {
-      showToast(err.message || 'Error al descargar la plantilla', 'error');
+      showErrorAlert('Error al descargar la plantilla', err.message || 'No se pudo descargar la plantilla.');
     } finally {
       setDownloadingTemplate(false);
     }
@@ -195,9 +187,9 @@ export default function InventoryPage() {
     setExportingExcel(true);
     try {
       await exportIngredientsReport();
-      showToast('Reporte de inventario exportado a Excel.');
+      showSuccessToast('Reporte de inventario exportado a Excel.');
     } catch (err) {
-      showToast(err.message || 'Error al exportar reporte', 'error');
+      showErrorAlert('Error al exportar el reporte', err.message || 'No se pudo exportar el reporte de inventario.');
     } finally {
       setExportingExcel(false);
     }
@@ -229,20 +221,6 @@ export default function InventoryPage() {
 
   return (
     <div className="space-y-6 max-w-7xl mx-auto pb-8">
-      {/* Toast Alert */}
-      {toast && (
-        <div
-          className={`fixed bottom-6 right-6 z-50 px-5 py-3 rounded-2xl shadow-xl border flex items-center space-x-3 text-sm font-bold animate-slide-up ${
-            toast.type === 'success'
-              ? 'bg-emerald-600 text-white border-emerald-700'
-              : 'bg-[#E63946] text-white border-red-700'
-          }`}
-        >
-          <CheckCircle2 className="w-5 h-5" />
-          <span>{toast.message}</span>
-        </div>
-      )}
-
       {/* TOP SWITCHER (Above the 2 Main Containers) */}
       <div className="flex items-center justify-center">
         <div className="bg-slate-200/60 p-1.5 rounded-2xl flex items-center space-x-1 border border-slate-200 shadow-sm">
@@ -353,7 +331,7 @@ export default function InventoryPage() {
         isOpen={importModalOpen}
         onClose={() => setImportModalOpen(false)}
         onImportSuccess={() => {
-          showToast('Carga masiva procesada exitosamente.');
+          showSuccessToast('Carga masiva procesada exitosamente.');
           loadData();
         }}
       />
