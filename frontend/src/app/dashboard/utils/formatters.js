@@ -2,18 +2,8 @@
  * Utility functions for data formatting without React dependencies.
  */
 
-/**
- * Formats a number as USD currency string.
- * @param {number} value
- * @returns {string}
- */
-export function formatCurrency(value) {
-  return new Intl.NumberFormat('en-US', {
-    style: 'currency',
-    currency: 'USD',
-    minimumFractionDigits: 2,
-  }).format(value);
-}
+// Moneda: formateador único compartido (ver common/formatCurrency.js).
+export { formatCurrency } from '../../common/formatCurrency';
 
 /**
  * Formats a decimal/percentage value into a user-friendly string.

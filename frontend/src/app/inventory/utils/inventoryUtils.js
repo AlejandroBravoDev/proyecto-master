@@ -25,19 +25,8 @@ export const REASON_LABELS = {
   MANUAL_ADJUSTMENT: 'Ajuste Manual',
 };
 
-/**
- * Formats a numeric value to USD currency string.
- * @param {number} value
- * @returns {string}
- */
-export function formatCurrency(value) {
-  const num = Number(value) || 0;
-  return new Intl.NumberFormat('en-US', {
-    style: 'currency',
-    currency: 'USD',
-    minimumFractionDigits: 2,
-  }).format(num);
-}
+// Moneda: formateador único compartido (ver common/formatCurrency.js).
+export { formatCurrency } from '../../common/formatCurrency';
 
 /**
  * Formats quantity with appropriate decimals.

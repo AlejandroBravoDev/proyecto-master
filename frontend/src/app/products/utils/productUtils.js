@@ -2,21 +2,42 @@
  * Pure JavaScript utilities and formatters for the Products module.
  */
 
+// Moneda: formateador único compartido (ver common/formatCurrency.js).
+export { formatCurrency } from '../../common/formatCurrency';
+
 /**
- * Formats a numeric value as standard currency ($XX.XX).
- * @param {number} value
- * @returns {string}
+ * Converts the recipe rows of the product form into the payload the backend expects.
+ * @param {Array<{ingredientId: number|string, quantity: number|string, measurementUnit?: string}>} rows
+ * @returns {Array<{ingredientId: number, quantity: number, measurementUnit: string}>}
  */
-export function formatCurrency(value) {
-  if (value === null || value === undefined || isNaN(value)) {
-    return '$0.00';
-  }
-  return new Intl.NumberFormat('es-CO', {
-    style: 'currency',
-    currency: 'USD',
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  }).format(value);
+export function buildRecipeIngredients(rows = []) {
+  return rows.map((item) => ({
+    ingredientId: Number(item.ingredientId),
+    quantity: Number(item.quantity),
+    measurementUnit: String(item.measurementUnit || 'unidad'),
+  }));
+}
+
+/**
+ * True when a recipe row has no ingredient selected or a quantity that is not greater than 0.
+ * @param {{ingredientId: number|string, quantity: number|string}} item
+ * @returns {boolean}
+ */
+export function isInvalidRecipeRow(item) {
+  return !item.ingredientId || !(Number(item.quantity) > 0);
+}
+
+/**
+ * True when two recipe row lists describe the same recipe (same ingredients, quantities and units),
+ * regardless of the order of the rows.
+ * @param {Array} rowsA
+ * @param {Array} rowsB
+ * @returns {boolean}
+ */
+export function isSameRecipe(rowsA = [], rowsB = []) {
+  const normalize = (rows) =>
+    buildRecipeIngredients(rows).sort((a, b) => a.ingredientId - b.ingredientId || a.quantity - b.quantity);
+  return JSON.stringify(normalize(rowsA)) === JSON.stringify(normalize(rowsB));
 }
 
 /**

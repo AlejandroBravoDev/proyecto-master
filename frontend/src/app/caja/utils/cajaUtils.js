@@ -36,22 +36,8 @@ export function calculateDenominationsTotal(countsMap = {}) {
   return Number(sum.toFixed(2));
 }
 
-/**
- * Formats a numeric value as currency ($XX.XX).
- * @param {number} value
- * @returns {string}
- */
-export function formatCurrency(value) {
-  if (value === null || value === undefined || isNaN(value)) {
-    return '$0.00';
-  }
-  return new Intl.NumberFormat('es-CO', {
-    style: 'currency',
-    currency: 'USD',
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  }).format(value);
-}
+// Moneda: formateador único compartido (ver common/formatCurrency.js).
+export { formatCurrency } from '../../common/formatCurrency';
 
 /**
  * Formats ISO date string to localized Colombian date/time (e.g., "30 ago 2026, 02:15 PM").
