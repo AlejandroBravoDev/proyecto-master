@@ -7,8 +7,13 @@
 
 import { Router } from 'express';
 import { recipeController } from '../controllers/recipe.controller';
+import { validateIdParam } from '../utils/http.utils';
 
 const router = Router();
+
+// Un :id o :productId que no sea entero positivo responde 400 en lugar de llegar a Prisma (500)
+router.param('id', validateIdParam);
+router.param('productId', validateIdParam);
 
 // Endpoint GET: Consultar todas las recetas del sistema
 router.get('/', (req, res) => recipeController.getRecipes(req, res));

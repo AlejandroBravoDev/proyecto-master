@@ -7,6 +7,8 @@
 
 import { Request, Response } from 'express';
 import { recipeService } from '../services/recipe.service';
+import { errorDetails, parseId, parseOptionalText } from '../utils/http.utils';
+import { parseRecipeIngredients } from '../utils/recipe.utils';
 
 export class RecipeController {
   /**
@@ -18,7 +20,7 @@ export class RecipeController {
       const recipes = await recipeService.getAllRecipes();
       return res.json(recipes);
     } catch (error) {
-      return res.status(500).json({ error: 'Error al obtener recetas', details: error });
+      return res.status(500).json({ error: 'Error al obtener recetas', details: errorDetails(error) });
     }
   }
 
@@ -37,26 +39,38 @@ export class RecipeController {
 
       return res.json(recipe);
     } catch (error) {
-      return res.status(500).json({ error: 'Error al obtener la receta', details: error });
+      return res.status(500).json({ error: 'Error al obtener la receta', details: errorDetails(error) });
     }
   }
 
   /**
    * POST /api/recipes
-   * Crea o actualiza la lista de insumos de una receta.
+   * Crea o REEMPLAZA la receta de un producto (upsert por productId): la lista de insumos
+   * enviada sustituye por completo a la anterior.
    */
   async saveRecipe(req: Request, res: Response) {
     try {
-      const { productId, name, ingredients } = req.body;
+      const { productId, name, ingredients } = req.body ?? {};
 
-      if (!productId || !ingredients || !Array.isArray(ingredients)) {
-        return res.status(400).json({ error: 'productId e ingredients (arreglo) son obligatorios' });
+      const parsedProductId = parseId(productId);
+      if (parsedProductId === null || !Array.isArray(ingredients)) {
+        return res.status(400).json({ error: 'productId (entero positivo) e ingredients (arreglo) son obligatorios' });
+      }
+
+      const parsedIngredients = parseRecipeIngredients(ingredients);
+      if ('error' in parsedIngredients) {
+        return res.status(400).json({ error: parsedIngredients.error });
+      }
+
+      const parsedName = parseOptionalText(name);
+      if (!parsedName.valid) {
+        return res.status(400).json({ error: 'El nombre de la receta debe ser texto' });
       }
 
       const recipe = await recipeService.saveRecipe({
-        productId: Number(productId),
-        name,
-        ingredients
+        productId: parsedProductId,
+        name: parsedName.value ?? undefined,
+        ingredients: parsedIngredients.ingredients
       });
 
       return res.status(201).json(recipe);
@@ -64,7 +78,10 @@ export class RecipeController {
       if (error.message === 'PRODUCT_NOT_FOUND') {
         return res.status(404).json({ error: 'Producto no encontrado' });
       }
-      return res.status(500).json({ error: 'Error al guardar la receta', details: error });
+      if (error.message?.startsWith('INGREDIENT_NOT_FOUND:')) {
+        return res.status(400).json({ error: `El insumo con ID ${error.message.split(':')[1]} no existe` });
+      }
+      return res.status(500).json({ error: 'Error al guardar la receta', details: errorDetails(error) });
     }
   }
 
@@ -81,7 +98,7 @@ export class RecipeController {
       if (error.code === 'P2025') {
         return res.status(404).json({ error: 'Receta no encontrada' });
       }
-      return res.status(500).json({ error: 'Error al eliminar la receta', details: error });
+      return res.status(500).json({ error: 'Error al eliminar la receta', details: errorDetails(error) });
     }
   }
 }
