@@ -7,7 +7,7 @@
  * con supertest sin abrir un puerto.
  *
  * `createApp(options)` construye una app nueva leyendo el entorno EN ESE MOMENTO
- * (límites de tasa, trust proxy), de modo que las pruebas pueden crear
+ * (límites de tasa, CORS, CSP, trust proxy), de modo que las pruebas pueden crear
  * apps con configuración inyectada. El `export default` es la app de producción.
  */
 
@@ -23,7 +23,12 @@ import helmet from 'helmet';
 import morgan from 'morgan';
 import apiRoutes from './routes/index';
 import { createRateLimiters, readRateLimitConfig, RateLimitConfig } from './middleware/rateLimit';
-import { resolveTrustProxy } from './middleware/security';
+import {
+  buildCorsOptions,
+  buildHelmetOptions,
+  resolveCorsPolicy,
+  resolveTrustProxy,
+} from './middleware/security';
 
 export interface AppOptions {
   /** Entorno con el que se configura la app (por defecto process.env). Solo se inyecta en pruebas. */
@@ -62,19 +67,28 @@ export function createApp(options: AppOptions = {}): Express {
   //    clientes comparten la IP del proxy (un único cupo de límite de tasa para todo el mundo).
   app.set('trust proxy', resolveTrustProxy(env));
 
-  // 1. Security Middleware: Helmet añade cabeceras HTTP seguras (CSP deshabilitado para permitir recursos compilados de Vite)
-  app.use(helmet({ contentSecurityPolicy: false }));
+  // 1. Security Middleware: Helmet añade cabeceras HTTP seguras, incluida una CSP
+  //    compatible con el frontend compilado (ver middleware/security.ts)
+  app.use(helmet(buildHelmetOptions(env)));
 
   // 2. CORS Middleware: Permite peticiones desde aplicaciones cliente (frontend)
-  const allowedOrigins = env.FRONTEND_URL ? env.FRONTEND_URL.split(',').map((url) => url.trim()) : true;
-
+  const corsPolicy = resolveCorsPolicy(env);
+  if (corsPolicy.mode === 'same-origin' && !isTest) {
+    console.warn(
+      '[Seguridad] FRONTEND_URL no está definida: CORS cerrado, solo se aceptan peticiones del mismo origen. ' +
+        'Si el frontend vive en otro dominio, defínela (lista separada por comas).'
+    );
+  }
+  const deniedOrigins = new Set<string>();
   app.use(
-    cors({
-      origin: allowedOrigins,
-      credentials: true,
-      methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
-      allowedHeaders: ['Content-Type', 'Authorization', 'Accept'],
-    })
+    cors(
+      buildCorsOptions(corsPolicy, (origin) => {
+        // Un aviso por origen (con tope) para diagnosticar un FRONTEND_URL mal puesto sin inundar el log.
+        if (isTest || deniedOrigins.has(origin) || deniedOrigins.size >= 20) return;
+        deniedOrigins.add(origin);
+        console.warn(`[CORS] Origen no permitido: ${origin}. Añádelo a FRONTEND_URL si es tu frontend.`);
+      })
+    )
   );
 
   // 3. Logger Middleware: Registra en consola las peticiones HTTP entrantes (formato dev); silenciado en pruebas
