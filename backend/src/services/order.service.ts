@@ -330,22 +330,39 @@ export class OrderService {
   }
 
   /**
+   * ID de la sesión de caja abierta ahora mismo (`null` si la caja está cerrada).
+   * Sirve para decidir qué comandas puede consultar un trabajador (solo las del turno actual).
+   */
+  async getOpenCashSessionId(): Promise<number | null> {
+    const session = await prisma.cashSession.findFirst({
+      where: { status: 'OPEN' },
+      select: { id: true }
+    });
+    return session?.id ?? null;
+  }
+
+  /**
    * Elimina una comanda por su ID, junto con su venta, y DEVUELVE el stock descontado:
    * por cada insumo consumido por la comanda registra un movimiento IN compensatorio
    * (MANUAL_ADJUSTMENT, referencia "Anulación Order #ORD-xxxx") en la misma transacción.
    * Se devuelve lo que realmente salió del Kardex (movimientos SALE de la comanda), no lo que
    * diga la receta hoy, porque la receta pudo cambiar después de la venta.
-   * Lanza `ORDER_NOT_FOUND` si la comanda no existe.
+   * Lanza `ORDER_NOT_FOUND` si la comanda no existe y, con `onlyCurrentShift`, `ORDER_NOT_IN_CURRENT_SHIFT`
+   * si la comanda ya no es del turno actual (se comprueba dentro de la transacción, sin carrera con el cierre de caja).
    * @param id ID de la comanda
+   * @param options.onlyCurrentShift Solo permite eliminar comandas activas (turno actual): lo exige el rol WORKER
    */
-  async deleteOrder(id: number) {
+  async deleteOrder(id: number, options: { onlyCurrentShift?: boolean } = {}) {
     return prisma.$transaction(async (tx) => {
       const order = await tx.order.findUnique({
         where: { id },
-        select: { id: true, number: true, createdAt: true }
+        select: { id: true, number: true, createdAt: true, active: true }
       });
       if (!order) {
         throw new Error('ORDER_NOT_FOUND');
+      }
+      if (options.onlyCurrentShift && !order.active) {
+        throw new Error('ORDER_NOT_IN_CURRENT_SHIFT');
       }
 
       // Los números de comanda se pueden reutilizar tras borrar la última: se limita a los

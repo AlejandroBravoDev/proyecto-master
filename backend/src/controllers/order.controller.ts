@@ -7,6 +7,7 @@
 
 import { Request, Response } from 'express';
 import { INSUFFICIENT_STOCK_PREFIX, orderService, parseInsufficientStock } from '../services/order.service';
+import { sendForbidden } from '../middleware/auth.middleware';
 import { errorDetails, parseId } from '../utils/http.utils';
 
 /** Fecha válida en formato YYYY-MM-DD (rechaza "2026-13-45" y texto libre). */
@@ -19,6 +20,8 @@ export class OrderController {
   /**
    * GET /api/orders
    * Retorna el listado de comandas con filtrado opcional por scope (active/all), date o cashSessionId.
+   * Un WORKER solo puede ver las comandas del turno actual (por defecto, `scope=active` o el
+   * `cashSessionId` de la caja abierta): `scope=all`, `date` o la sesión de otro turno responden 403.
    */
   async getOrders(req: Request, res: Response) {
     try {
@@ -38,6 +41,15 @@ export class OrderController {
         cashSessionId = parsed;
       }
 
+      if (req.user?.role !== 'ADMIN') {
+        if (scope === 'all' || date !== undefined) {
+          return sendForbidden(res);
+        }
+        if (cashSessionId !== undefined && cashSessionId !== (await orderService.getOpenCashSessionId())) {
+          return sendForbidden(res);
+        }
+      }
+
       const orders = await orderService.getAllOrders({ scope, date, cashSessionId });
       return res.json(orders);
     } catch (error) {
@@ -47,7 +59,7 @@ export class OrderController {
 
   /**
    * GET /api/orders/:id
-   * Retorna el detalle de una comanda por ID.
+   * Retorna el detalle de una comanda por ID. Un WORKER solo puede ver comandas del turno actual (403 si no).
    */
   async getOrderById(req: Request, res: Response) {
     try {
@@ -56,6 +68,9 @@ export class OrderController {
 
       if (!order) {
         return res.status(404).json({ error: 'Comanda no encontrada' });
+      }
+      if (req.user?.role !== 'ADMIN' && !order.active) {
+        return sendForbidden(res);
       }
 
       return res.json(order);
@@ -115,16 +130,20 @@ export class OrderController {
   /**
    * DELETE /api/orders/:id
    * Elimina una comanda y su venta y devuelve el stock de los insumos que consumió
-   * (movimientos IN compensatorios en el Kardex).
+   * (movimientos IN compensatorios en el Kardex). Un WORKER solo puede eliminar comandas del
+   * turno actual (403 si la comanda es de un turno ya cerrado).
    */
   async deleteOrder(req: Request, res: Response) {
     try {
       const id = Number(req.params.id);
-      await orderService.deleteOrder(id);
+      await orderService.deleteOrder(id, { onlyCurrentShift: req.user?.role !== 'ADMIN' });
       return res.json({ message: 'Comanda eliminada correctamente' });
     } catch (error: any) {
       if (error.message === 'ORDER_NOT_FOUND' || error.code === 'P2025') {
         return res.status(404).json({ error: 'Comanda no encontrada' });
+      }
+      if (error.message === 'ORDER_NOT_IN_CURRENT_SHIFT') {
+        return sendForbidden(res);
       }
       return res.status(500).json({ error: 'Error al eliminar la comanda', details: errorDetails(error) });
     }

@@ -16,7 +16,7 @@ import {
 } from '../../src/middleware/security';
 import { useTestApp } from '../helpers/testApp';
 
-useTestApp();
+const ctx = useTestApp();
 
 const appWith = (env: NodeJS.ProcessEnv) =>
   supertest(createApp({ env: { NODE_ENV: 'test', ...env }, requestLogger: false }));
@@ -226,10 +226,12 @@ describe('S4: Content-Security-Policy', () => {
       expect(index.headers['x-content-type-options']).toBe('nosniff');
 
       // Una ruta del SPA (router de hash o no) cae en index.html; /api desconocido sigue siendo JSON 404
+      // (con sesión: sin token, /api responde 401 antes de saber si la ruta existe)
       expect((await api.get('/cualquier/ruta')).status).toBe(200);
-      const missing = await api.get('/api/no-existe');
+      const missing = await api.get('/api/no-existe').set('Authorization', `Bearer ${ctx.adminToken}`);
       expect(missing.status).toBe(404);
       expect(missing.body).toEqual({ error: 'Ruta o endpoint no encontrado' });
+      expect((await api.get('/api/no-existe')).status).toBe(401);
     } finally {
       fs.rmSync(dist, { recursive: true, force: true });
     }

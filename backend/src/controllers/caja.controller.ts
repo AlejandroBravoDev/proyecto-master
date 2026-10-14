@@ -8,13 +8,8 @@
 
 import { Request, Response } from 'express';
 import { cajaService } from '../services/caja.service';
+import { sendUnauthorized } from '../middleware/auth.middleware';
 import { errorDetails, parseId, parseOptionalText, parsePagination, toFiniteNumber } from '../utils/http.utils';
-
-/** `userId` es opcional: vacío = sin auditor; si viene debe ser un id válido (null = inválido). */
-function parseOptionalUserId(value: unknown): number | undefined | null {
-  if (value === undefined || value === null || value === '') return undefined;
-  return parseId(value);
-}
 
 export class CajaController {
   /**
@@ -32,11 +27,17 @@ export class CajaController {
 
   /**
    * POST /api/caja/open
-   * Abre la sesión de caja registrando la base inicial con su desglose de billetes y monedas y usuario.
+   * Abre la sesión de caja registrando la base inicial con su desglose de billetes y monedas.
+   * El responsable de la apertura es SIEMPRE el usuario del token (`req.user`): el `userId` que
+   * pueda venir en el cuerpo se ignora (un cliente no puede abrir la caja a nombre de otro).
    */
   async openSession(req: Request, res: Response) {
     try {
-      const { denominations, notes, userId } = req.body ?? {};
+      if (!req.user) {
+        return sendUnauthorized(res, 'NO_TOKEN');
+      }
+
+      const { denominations, notes } = req.body ?? {};
 
       if (!denominations || typeof denominations !== 'object') {
         return res.status(400).json({
@@ -44,12 +45,7 @@ export class CajaController {
         });
       }
 
-      const parsedUserId = parseOptionalUserId(userId);
-      if (parsedUserId === null) {
-        return res.status(400).json({ error: 'userId inválido' });
-      }
-
-      const session = await cajaService.openSession({ denominations, notes, userId: parsedUserId });
+      const session = await cajaService.openSession({ denominations, notes, userId: req.user.id });
       return res.status(201).json(session);
     } catch (error: any) {
       if (error.message === 'SESSION_ALREADY_OPEN') {
@@ -58,7 +54,8 @@ export class CajaController {
         });
       }
       if (error.message === 'USER_NOT_FOUND' || error.code === 'P2003') {
-        return res.status(400).json({ error: 'El usuario indicado (userId) no existe' });
+        // El usuario del token ya no existe (no debería pasar: `authenticate` lo acaba de leer)
+        return sendUnauthorized(res, 'INVALID_TOKEN');
       }
       return res.status(500).json({ error: 'Error al abrir la caja', details: errorDetails(error) });
     }
@@ -67,10 +64,15 @@ export class CajaController {
   /**
    * POST /api/caja/close
    * Cierra la caja activa registrando el conteo final y archivando comandas activas.
+   * Quien cierra es SIEMPRE el usuario del token: el `userId` del cuerpo se ignora.
    */
   async closeSession(req: Request, res: Response) {
     try {
-      const { denominations, closingNotes, userId } = req.body ?? {};
+      if (!req.user) {
+        return sendUnauthorized(res, 'NO_TOKEN');
+      }
+
+      const { denominations, closingNotes } = req.body ?? {};
 
       if (!denominations || typeof denominations !== 'object') {
         return res.status(400).json({
@@ -78,12 +80,7 @@ export class CajaController {
         });
       }
 
-      const parsedUserId = parseOptionalUserId(userId);
-      if (parsedUserId === null) {
-        return res.status(400).json({ error: 'userId inválido' });
-      }
-
-      const closedSession = await cajaService.closeSession({ denominations, closingNotes, userId: parsedUserId });
+      const closedSession = await cajaService.closeSession({ denominations, closingNotes, userId: req.user.id });
       return res.status(200).json(closedSession);
     } catch (error: any) {
       if (error.message === 'NO_ACTIVE_SESSION') {
@@ -92,7 +89,7 @@ export class CajaController {
         });
       }
       if (error.message === 'USER_NOT_FOUND' || error.code === 'P2003') {
-        return res.status(400).json({ error: 'El usuario indicado (userId) no existe' });
+        return sendUnauthorized(res, 'INVALID_TOKEN');
       }
       return res.status(500).json({ error: 'Error al cerrar la caja', details: errorDetails(error) });
     }

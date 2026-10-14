@@ -3,6 +3,15 @@
  * ENRUTADOR CENTRAL / MASTER ROUTER
  * ====================================================
  * Agrupa y monta los submódulos de rutas bajo el prefijo `/api`.
+ *
+ * SEGURIDAD: `/auth` se monta primero y es PÚBLICO (solo `POST /auth/login` lo es; `/auth/me`
+ * lleva su propio `authenticate`). Desde `router.use(authenticate)` TODO exige un token válido.
+ * Los roles se aplican así:
+ *  - módulos solo para ADMIN: aquí, con `requireRole('ADMIN')` en el montaje (users, sales);
+ *  - módulos mixtos: en su archivo `*.routes.ts`, ruta por ruta (ver la matriz en
+ *    .claude/skills/fullstack-domain-reference/references/users-roles.md).
+ * Una ruta nueva sin guardia de rol queda abierta a CUALQUIER usuario autenticado: decide su rol
+ * al crearla y añádela a la matriz de tests/integration/auth-roles.test.ts.
  */
 
 import { Router } from 'express';
@@ -17,14 +26,18 @@ import dashboardRoutes from './dashboard.routes';
 import cajaRoutes from './caja.routes';
 import authRoutes from './auth.routes';
 import userRoutes from './user.routes';
+import { authenticate, requireRole } from '../middleware/auth.middleware';
 
 const router = Router();
 
-// Montar submódulo de Autenticación en /api/auth
+// Montar submódulo de Autenticación en /api/auth (PÚBLICO: solo POST /auth/login)
 router.use('/auth', authRoutes);
 
-// Montar submódulo de Usuarios en /api/users
-router.use('/users', userRoutes);
+// ---- Desde aquí, todas las rutas exigen sesión (Authorization: Bearer <token>) ----
+router.use(authenticate);
+
+// Montar submódulo de Usuarios en /api/users (solo ADMIN)
+router.use('/users', requireRole('ADMIN'), userRoutes);
 
 // Montar submódulo de Categorías en /api/categories
 router.use('/categories', categoryRoutes);
@@ -41,8 +54,8 @@ router.use('/recipes', recipeRoutes);
 // Montar submódulo de Comandas en /api/orders
 router.use('/orders', orderRoutes);
 
-// Montar submódulo de Ventas y Facturación en /api/sales
-router.use('/sales', saleRoutes);
+// Montar submódulo de Ventas y Facturación en /api/sales (solo ADMIN: la UI no lo usa y expone todo el historial)
+router.use('/sales', requireRole('ADMIN'), saleRoutes);
 
 // Montar submódulo de Kardex y Alertas de Inventario en /api/inventory
 router.use('/inventory', inventoryRoutes);

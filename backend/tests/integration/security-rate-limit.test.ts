@@ -10,8 +10,9 @@ import { createApp } from '../../src/app';
 import { RATE_LIMIT_DEFAULTS, readRateLimitConfig } from '../../src/middleware/rateLimit';
 import { useTestApp, ADMIN } from '../helpers/testApp';
 
-// Inicializa la BD temporal (Admin/123456) y la limpia al terminar.
-useTestApp();
+// Inicializa la BD temporal (Admin/123456) y la limpia al terminar; `ctx.adminToken` da acceso a /api.
+const ctx = useTestApp();
+const auth = () => ({ Authorization: `Bearer ${ctx.adminToken}` });
 
 const WINDOW_MS = 15 * 60 * 1000;
 
@@ -77,7 +78,7 @@ describe('rate limit de login (por IP, solo intentos fallidos)', () => {
     const api = supertest(createApp({ rateLimit: { loginMax: 1, loginWindowMs: WINDOW_MS } }));
     expect((await login(api, 'mala')).status).toBe(401);
     expect((await login(api, 'mala')).status).toBe(429);
-    expect((await api.get('/api/categories')).status).toBe(200);
+    expect((await api.get('/api/categories').set(auth())).status).toBe(200);
     expect((await api.get('/health')).status).toBe(200);
   });
 
@@ -94,12 +95,12 @@ describe('rate limit global de /api', () => {
     const api = supertest(createApp({ rateLimit: { apiMax: 5, apiWindowMs: 60_000, loginMax: 1000 } }));
 
     for (let i = 1; i <= 5; i++) {
-      const res = await api.get('/api/categories');
+      const res = await api.get('/api/categories').set(auth());
       expect(res.status).toBe(200);
       expect(res.headers['ratelimit-limit']).toBe('5');
     }
 
-    const blocked = await api.get('/api/categories');
+    const blocked = await api.get('/api/categories').set(auth());
     expect(blocked.status).toBe(429);
     expect(blocked.body.error).toMatch(/^Demasiadas peticiones/);
     expect(Number(blocked.headers['retry-after'])).toBeGreaterThan(0);

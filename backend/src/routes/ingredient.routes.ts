@@ -8,6 +8,7 @@
 import { Router, Request, Response, NextFunction } from 'express';
 import multer from 'multer';
 import { ingredientController } from '../controllers/ingredient.controller';
+import { requireAdminOrFields, requireRole } from '../middleware/auth.middleware';
 import { validateIdParam } from '../utils/http.utils';
 
 const MAX_UPLOAD_BYTES = 10 * 1024 * 1024; // 10 MB
@@ -31,28 +32,29 @@ const router = Router();
 // Un :id que no sea entero positivo responde 400 en lugar de llegar a Prisma (500)
 router.param('id', validateIdParam);
 
-// Endpoint GET: Listar todo el inventario de materias primas
+// Endpoint GET: Listar todo el inventario de materias primas (cualquier usuario autenticado)
 router.get('/', (req, res) => ingredientController.getIngredients(req, res));
 
-// Endpoint GET: Descargar plantilla de Excel para carga masiva de insumos
+// Endpoint GET: Descargar plantilla de Excel para carga masiva de insumos (cualquier usuario autenticado)
 router.get('/template/ingredients', (req, res) => ingredientController.downloadTemplate(req, res));
 
-// Endpoint GET: Descargar reporte de inventarios de insumos en formato Excel
+// Endpoint GET: Descargar reporte de inventarios de insumos en formato Excel (cualquier usuario autenticado)
 router.get('/export/ingredients', (req, res) => ingredientController.exportExcel(req, res));
 
-// Endpoint POST: Carga masiva de insumos desde archivo Excel
-router.post('/import/ingredients', uploadSingleFile, (req, res) => ingredientController.importExcel(req, res));
+// Endpoint POST: Carga masiva de insumos desde archivo Excel (solo ADMIN; el rol se comprueba ANTES de leer el archivo)
+router.post('/import/ingredients', requireRole('ADMIN'), uploadSingleFile, (req, res) => ingredientController.importExcel(req, res));
 
-// Endpoint GET: Consultar un insumo y su historial de movimientos
+// Endpoint GET: Consultar un insumo y su historial de movimientos (cualquier usuario autenticado)
 router.get('/:id', (req, res) => ingredientController.getIngredientById(req, res));
 
-// Endpoint POST: Registrar un insumo nuevo en el sistema
-router.post('/', (req, res) => ingredientController.createIngredient(req, res));
+// Endpoint POST: Registrar un insumo nuevo en el sistema (solo ADMIN)
+router.post('/', requireRole('ADMIN'), (req, res) => ingredientController.createIngredient(req, res));
 
-// Endpoint PUT: Actualizar datos de insumo o realizar ajustes de stock
-router.put('/:id', (req, res) => ingredientController.updateIngredient(req, res));
+// Endpoint PUT: Actualizar datos de insumo o realizar ajustes de stock. ADMIN: cualquier campo.
+// WORKER: solo el ajuste de stock (`adjustStock` + `adjustReason`), que es lo que la interfaz le permite
+router.put('/:id', requireAdminOrFields('adjustStock', 'adjustReason'), (req, res) => ingredientController.updateIngredient(req, res));
 
-// Endpoint DELETE: Eliminar un insumo
-router.delete('/:id', (req, res) => ingredientController.deleteIngredient(req, res));
+// Endpoint DELETE: Eliminar un insumo (solo ADMIN)
+router.delete('/:id', requireRole('ADMIN'), (req, res) => ingredientController.deleteIngredient(req, res));
 
 export default router;

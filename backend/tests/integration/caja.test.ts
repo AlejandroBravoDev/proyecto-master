@@ -117,28 +117,28 @@ describe('/api/caja validaciones de entrada', () => {
     expect((await ctx.api.get(`/api/caja/session/${first.id}`)).body).toEqual(before);
   });
 
-  it('POST /open con un userId inválido o inexistente responde 400 y no abre la caja', async () => {
+  // S1: el responsable de abrir/cerrar es el usuario del token; el `userId` del cuerpo se ignora
+  // (aunque sea inválido o inexistente) y ya no provoca un 400. La suplantación con otro usuario
+  // válido se prueba en auth-middleware.test.ts.
+  it('POST /open y /close ignoran un userId inválido o inexistente del cuerpo y usan el usuario del token', async () => {
+    const admin = (await ctx.api.get('/api/auth/me')).body.user;
+
     for (const userId of ['abc', -1, 999999]) {
-      const res = await ctx.api.post('/api/caja/open').send({ denominations: { '1': 5 }, userId });
-      expect([String(userId), res.status]).toEqual([String(userId), 400]);
-      expect(res.body.error).toMatch(/userId|usuario/i);
+      const closed = await ctx.api.post('/api/caja/close').send({ denominations: { '1': 5 }, userId });
+      expect([String(userId), closed.status]).toEqual([String(userId), 400]); // sin caja abierta: 400 por NO_ACTIVE_SESSION, no por el userId
+      expect(closed.body.error).toMatch(/caja abierta/i);
     }
-    expect((await ctx.api.get('/api/caja/status')).body.isOpen).toBe(false);
-  });
 
-  it('POST /close con un userId inválido responde 400 y la caja sigue abierta', async () => {
-    const open = await ctx.api.post('/api/caja/open').send({ denominations: { '1': 5 } });
+    const open = await ctx.api.post('/api/caja/open').send({ denominations: { '1': 5 }, userId: 'abc' });
     expect(open.status).toBe(201);
-
-    const res = await ctx.api.post('/api/caja/close').send({ denominations: { '1': 5 }, userId: 'abc' });
-    expect(res.status).toBe(400);
+    expect(open.body.openedByUserId).toBe(admin.id);
+    expect(open.body.openedByUser).toMatchObject({ id: admin.id, username: 'Admin' });
     expect((await ctx.api.get('/api/caja/status')).body.isOpen).toBe(true);
 
-    const missingUser = await ctx.api.post('/api/caja/close').send({ denominations: { '1': 5 }, userId: 999999 });
-    expect(missingUser.status).toBe(400);
-    expect((await ctx.api.get('/api/caja/status')).body.isOpen).toBe(true);
-
-    expect((await ctx.api.post('/api/caja/close').send({ denominations: { '1': 5 }, userId: 1 })).status).toBe(200);
+    const close = await ctx.api.post('/api/caja/close').send({ denominations: { '1': 5 }, userId: 999999 });
+    expect(close.status).toBe(200);
+    expect(close.body.closedByUserId).toBe(admin.id);
+    expect((await ctx.api.get('/api/caja/status')).body.isOpen).toBe(false);
   });
 
   it('GET /history rechaza page, limit y openedByUserId inválidos y recorta el límite a 200', async () => {

@@ -16,6 +16,10 @@ process.env.SQLITE_BACKUP_DIR = path.join(dir, 'backups');
 process.env.DATABASE_URL = '';
 process.env.FRONTEND_URL = '';
 
+// Secreto de las sesiones JWT, fijo y de al menos 32 caracteres: las pruebas lo leen de process.env
+// para firmar tokens "ajenos" (otra clave, vencidos...). No es un secreto real.
+process.env.JWT_SECRET = 'mf-test-jwt-secret-0123456789-abcdefghijklmnopqrstuvwxyz';
+
 // Variables de seguridad/operación: vacías para que un backend/.env local no cambie el resultado
 // de las pruebas (dotenv no pisa las variables ya definidas, ni siquiera vacías). Con NODE_ENV=test
 // los límites de tasa son muy altos por defecto; las pruebas de límites inyectan los suyos.
@@ -28,6 +32,7 @@ for (const name of [
   'RATE_LIMIT_LOGIN_WINDOW_MS',
   'RATE_LIMIT_API_MAX',
   'RATE_LIMIT_API_WINDOW_MS',
+  'JWT_EXPIRES_IN',
 ]) {
   process.env[name] = '';
 }

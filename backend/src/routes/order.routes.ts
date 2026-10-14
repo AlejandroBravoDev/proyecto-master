@@ -14,7 +14,11 @@ const router = Router();
 // Un :id que no sea entero positivo responde 400 en lugar de llegar a Prisma (500)
 router.param('id', validateIdParam);
 
-// Endpoint GET: Consultar el historial de comandas registradas
+// Todas las rutas de comandas son para cualquier usuario autenticado, pero el WORKER solo puede
+// ver y eliminar las comandas del turno actual: ese filtro por rol vive en OrderController
+// (403 si pide el historial o una comanda de un turno anterior).
+
+// Endpoint GET: Consultar las comandas (por defecto, las del turno actual)
 router.get('/', (req, res) => orderController.getOrders(req, res));
 
 // Endpoint GET: Consultar una comanda específica por su ID
