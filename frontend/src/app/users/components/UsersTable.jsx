@@ -1,19 +1,25 @@
 import React from 'react';
-import { Edit3, KeyRound, Power, ShieldCheck, User, ChevronLeft, ChevronRight, UserX, UserCheck } from 'lucide-react';
+import { Edit3, KeyRound, Power, ShieldCheck, User } from 'lucide-react';
 import { formatDate, formatRole } from '../utils/userUtils';
+import Pagination, { ITEMS_PER_PAGE } from '../../common/Pagination';
 
+/**
+ * Tabla de usuarios. Pinta exactamente las filas de `users` (la página ya decide qué porción toca);
+ * el paginador es el componente común `Pagination`, que se oculta si `totalItems` es 0.
+ */
 export default function UsersTable({
   users = [],
   onEdit,
   onResetPassword,
   onToggleStatus,
   currentPage = 1,
-  totalPages = 1,
+  totalItems = 0,
+  itemsPerPage = ITEMS_PER_PAGE,
   onPageChange,
 }) {
   return (
-    <div className="bg-white rounded-3xl border border-slate-200/80 shadow-sm overflow-hidden space-y-4 p-6 md:p-8">
-      <div className="overflow-x-auto">
+    <div className="bg-white rounded-3xl border border-slate-200/80 shadow-sm overflow-hidden">
+      <div className="overflow-x-auto p-6 md:p-8">
         <table className="w-full text-left border-collapse">
           <thead>
             <tr className="border-b border-slate-100 text-[11px] font-bold text-slate-400 uppercase tracking-wider bg-slate-50/50">
@@ -139,38 +145,12 @@ export default function UsersTable({
         </table>
       </div>
 
-      {/* Pagination Controls (15 items per page) */}
-      {totalPages > 1 && (
-        <div className="flex items-center justify-between pt-4 border-t border-slate-100">
-          <span className="text-xs text-slate-500 font-medium">
-            Página {currentPage} de {totalPages}
-          </span>
-
-          <div className="flex items-center space-x-2">
-            <button
-              onClick={() => onPageChange(Math.max(1, currentPage - 1))}
-              disabled={currentPage <= 1}
-              className="p-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 disabled:opacity-40 transition-colors cursor-pointer disabled:cursor-not-allowed"
-              title="Página anterior"
-            >
-              <ChevronLeft className="w-4 h-4" />
-            </button>
-
-            <span className="text-xs font-bold text-[#584235] px-2">
-              {currentPage}
-            </span>
-
-            <button
-              onClick={() => onPageChange(Math.min(totalPages, currentPage + 1))}
-              disabled={currentPage >= totalPages}
-              className="p-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 disabled:opacity-40 transition-colors cursor-pointer disabled:cursor-not-allowed"
-              title="Página siguiente"
-            >
-              <ChevronRight className="w-4 h-4" />
-            </button>
-          </div>
-        </div>
-      )}
+      <Pagination
+        currentPage={currentPage}
+        totalItems={totalItems}
+        itemsPerPage={itemsPerPage}
+        onPageChange={onPageChange}
+      />
     </div>
   );
 }

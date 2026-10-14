@@ -12,6 +12,7 @@ import {
   updateUserStatus,
 } from './services/userService';
 import { confirmDialog, showErrorAlert, showSuccessToast } from '../common/alertUtils';
+import { ITEMS_PER_PAGE } from '../common/Pagination';
 
 export default function UsersPage() {
   const [users, setUsers] = useState([]);
@@ -21,8 +22,14 @@ export default function UsersPage() {
   // Search & Pagination
   const [searchTerm, setSearchTerm] = useState('');
   const [currentPage, setCurrentPage] = useState(1);
-  const [totalPages, setTotalPages] = useState(1);
   const [totalCount, setTotalCount] = useState(0);
+
+  // Hoy `GET /api/users` ignora page/limit y devuelve a todos los usuarios (I1): en ese caso la
+  // página recibida trae `totalCount` filas y se pagina aquí, en el cliente. Si el backend llega a
+  // paginar (devuelve solo una porción y el `total`), se muestra tal cual y cada cambio de página
+  // vuelve a pedir esa página.
+  const serverPaged = users.length < totalCount;
+  const fetchPage = serverPaged ? currentPage : 1;
 
   // Modal States
   const [userModalOpen, setUserModalOpen] = useState(false);
@@ -35,11 +42,10 @@ export default function UsersPage() {
     setLoading(true);
     setError(null);
 
-    fetchUsers(currentPage, 15)
+    fetchUsers(fetchPage, ITEMS_PER_PAGE)
       .then((data) => {
         const list = Array.isArray(data) ? data : data.users || [];
         setUsers(list);
-        setTotalPages(data.totalPages || 1);
         setTotalCount(data.total !== undefined ? data.total : list.length);
         setLoading(false);
       })
@@ -47,11 +53,16 @@ export default function UsersPage() {
         setError(err.message || 'No se pudieron cargar los trabajadores.');
         setLoading(false);
       });
-  }, [currentPage]);
+  }, [fetchPage]);
 
   useEffect(() => {
     loadUsers();
   }, [loadUsers]);
+
+  // Volver a la primera página al buscar
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchTerm]);
 
   // Client-side search filtering
   const filteredUsers = useMemo(() => {
@@ -63,6 +74,16 @@ export default function UsersPage() {
         u.username.toLowerCase().includes(term)
     );
   }, [users, searchTerm]);
+
+  // Filas de la página actual y total para el paginador común
+  const totalItems = serverPaged ? totalCount : filteredUsers.length;
+  const totalPages = Math.max(1, Math.ceil(totalItems / ITEMS_PER_PAGE));
+  const safePage = Math.min(Math.max(1, currentPage), totalPages);
+  const pagedUsers = useMemo(() => {
+    if (serverPaged) return filteredUsers;
+    const start = (safePage - 1) * ITEMS_PER_PAGE;
+    return filteredUsers.slice(start, start + ITEMS_PER_PAGE);
+  }, [serverPaged, filteredUsers, safePage]);
 
   // Create / Edit User Handler
   const handleUserSubmit = async (payload) => {
@@ -157,7 +178,7 @@ export default function UsersPage() {
         </div>
       ) : (
         <UsersTable
-          users={filteredUsers}
+          users={pagedUsers}
           onEdit={(u) => {
             setEditingUser(u);
             setUserModalOpen(true);
@@ -167,8 +188,9 @@ export default function UsersPage() {
             setPasswordModalOpen(true);
           }}
           onToggleStatus={handleToggleStatus}
-          currentPage={currentPage}
-          totalPages={totalPages}
+          currentPage={safePage}
+          totalItems={totalItems}
+          itemsPerPage={ITEMS_PER_PAGE}
           onPageChange={setCurrentPage}
         />
       )}
