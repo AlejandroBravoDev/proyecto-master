@@ -322,9 +322,12 @@ const lineRules = [
   {
     id: 'FE-FETCH-OUTSIDE-SERVICE',
     area: 'frontend',
-    skip: (f) => f.includes('/services/') || f.endsWith('src/config/api.js'),
+    // `config/apiFetch.js` es la capa HTTP única (token, 401, errores en español) y el ÚNICO archivo que
+    // puede llamar a fetch(); ni siquiera los services lo llaman directo (usan requestJson / requestBlob).
+    // Lo mismo vigila frontend/tests/config/project-structure.test.js.
+    skip: (f) => f.endsWith('src/config/apiFetch.js'),
     test: (l) => /\bfetch\s*\(/.test(l),
-    message: 'fetch() fuera de services/: las llamadas HTTP van en <feature>Service.js (frontend-api-service).',
+    message: 'fetch() directo: toda llamada HTTP pasa por la capa compartida de config/apiFetch.js (requestJson / requestBlob / apiFetch), desde un <feature>Service.js (frontend-api-service).',
   },
   {
     id: 'FE-UNDEFINED-ANIMATION',
@@ -340,7 +343,7 @@ const lineRules = [
     id: 'BE-DETAILS-OBJECT',
     area: 'backend',
     test: (l) => /details:\s*(error|err)\s*[,})]/.test(l),
-    message: 'Devuelve el objeto de error completo en "details" (filtra internals de Prisma): usa error.message.',
+    message: 'Devuelve el objeto de error completo en "details" (filtra internals de Prisma): usa errorDetails(error) de utils/http.utils.ts (siempre texto).',
   },
   {
     id: 'BE-REQ-MUTATION',

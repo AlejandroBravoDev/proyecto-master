@@ -45,7 +45,6 @@ const EXAMPLE_PATH = /(supplier|purchase|Supplier|Purchase|suppliers|purchases)/
 // Archivos que las skills indican CREAR la primera vez que se necesiten (aún no existen en el repo).
 // Si algún día se crean, quítalos de esta lista.
 const PLANNED_FILES = new Set([
-  'backend/src/utils/sequence.utils.ts',
   'frontend/src/app/common/fileUtils.js',
 ]);
 const issues = [];
