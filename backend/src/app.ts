@@ -22,7 +22,13 @@ import cors from 'cors';
 import helmet from 'helmet';
 import morgan from 'morgan';
 import apiRoutes from './routes/index';
-import { createRateLimiters, readRateLimitConfig, RateLimitConfig } from './middleware/rateLimit';
+import { BODY_LIMIT, ensureBody } from './middleware/requestBody';
+import { errorHandler, notFoundHandler } from './middleware/errorHandler';
+import {
+  createRateLimiters,
+  readRateLimitConfig,
+  RateLimitConfig,
+} from './middleware/rateLimit';
 import {
   buildCorsOptions,
   buildHelmetOptions,
@@ -110,8 +116,10 @@ export function createApp(options: AppOptions = {}): Express {
   }
 
   // 5. Body Parsers: Convierte los cuerpos de peticiones JSON y URL-encoded a req.body
-  app.use(express.json());
-  app.use(express.urlencoded({ extended: true }));
+  app.use(express.json({ limit: BODY_LIMIT }));
+  app.use(express.urlencoded({ extended: true, limit: BODY_LIMIT }));
+  //    En Express 5 un POST sin cuerpo deja req.body en undefined: se normaliza a {}
+  app.use(ensureBody);
 
   // 6. Endpoint de prueba de vida (Health Check)
   app.get('/health', (_req: Request, res: Response) => {
@@ -139,15 +147,10 @@ export function createApp(options: AppOptions = {}): Express {
   }
 
   // 9. Middleware para rutas no encontradas (404)
-  app.use((_req: Request, res: Response) => {
-    res.status(404).json({ error: 'Ruta o endpoint no encontrado' });
-  });
+  app.use(notFoundHandler);
 
-  // 10. Middleware de captura global de errores (500)
-  app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
-    console.error('Unhandled Server Error:', err);
-    res.status(500).json({ error: 'Error interno del servidor', details: err.message || err });
-  });
+  // 10. Middleware de captura global de errores (JSON inválido -> 400, cuerpo grande -> 413, resto -> 500)
+  app.use(errorHandler);
 
   return app;
 }
