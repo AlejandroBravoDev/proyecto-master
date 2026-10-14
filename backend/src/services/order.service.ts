@@ -4,13 +4,44 @@
  * ====================================================
  * Procesa la creación de pedidos y efectúa de forma automática:
  * 1. Validación de sesión de caja activa (caja abierta).
- * 2. Descuento de stock de insumos en bodega según receta.
+ * 2. Validación de stock suficiente y descuento de insumos en bodega según receta
+ *    (sin stock suficiente no se crea nada).
  * 3. Registro inmediato de la Venta (Sale) cobrada.
  * 4. Filtrado por turno actual (active) o histórico por fecha/sesión.
+ * 5. Al eliminar una comanda se devuelve el stock con movimientos compensatorios en el Kardex.
  */
 
 import prisma from '../prisma/client';
 import { PaymentMethod } from '@prisma/client';
+import { nextInvoiceNumber, nextOrderNumber } from '../utils/sequence.utils';
+import { assertValidItems, normalizeAmount, normalizePaymentMethod, roundQuantity } from '../utils/sale.utils';
+
+/** Prefijo del error de stock insuficiente: `INSUFFICIENT_STOCK:<JSON de StockShortage[]>`. */
+export const INSUFFICIENT_STOCK_PREFIX = 'INSUFFICIENT_STOCK:';
+
+/** Insumo que no alcanza para completar una comanda. */
+export interface StockShortage {
+  ingredientId: number;
+  name: string;
+  measurementUnit: string;
+  /** Cantidad total que necesita la comanda */
+  needed: number;
+  /** Stock disponible en bodega */
+  available: number;
+}
+
+/** Tolerancia para comparar cantidades de punto flotante. */
+const STOCK_EPSILON = 1e-9;
+
+/** Lee los faltantes de un error `INSUFFICIENT_STOCK:<json>` (arreglo vacío si no se puede leer). */
+export function parseInsufficientStock(message: string): StockShortage[] {
+  try {
+    const parsed = JSON.parse(message.slice(INSUFFICIENT_STOCK_PREFIX.length));
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
 
 export class OrderService {
   /**
@@ -83,7 +114,11 @@ export class OrderService {
   }
 
   /**
-   * Registra una nueva comanda, valida caja abierta, descuenta insumos y genera la VENTA (Sale) automáticamente.
+   * Registra una nueva comanda, valida caja abierta y stock suficiente, descuenta insumos
+   * y genera la VENTA (Sale) automáticamente, todo en una única transacción.
+   * Códigos de error: CAJA_CERRADA, PRODUCT_NOT_FOUND:<id>, PRODUCT_UNAVAILABLE:<nombre>,
+   * INSUFFICIENT_STOCK:<json>, INVALID_ITEM, INVALID_AMOUNT, INVALID_PAYMENT_METHOD.
+   * Los productos DIRECT_INVENTORY no tienen receta y no descuentan insumos.
    * @param data Lista de productos solicitados, forma de pago opcional, impuestos/descuentos y notas
    */
   async createOrder(data: {
@@ -93,129 +128,123 @@ export class OrderService {
     tax?: number;
     discount?: number;
   }) {
-    // 1. Validación obligatoria de Caja Abierta
-    const activeCashSession = await prisma.cashSession.findFirst({
-      where: { status: 'OPEN' }
-    });
+    // 0. Validar la entrada antes de abrir la transacción
+    assertValidItems(data.items);
+    const paymentMethod = normalizePaymentMethod(data.paymentMethod);
+    const calculatedTax = Number(normalizeAmount(data.tax).toFixed(2));
+    const calculatedDiscount = Number(normalizeAmount(data.discount).toFixed(2));
 
-    if (!activeCashSession) {
-      throw new Error('CAJA_CERRADA');
-    }
+    return prisma.$transaction(async (tx) => {
+      // 1. Validación obligatoria de Caja Abierta
+      const activeCashSession = await tx.cashSession.findFirst({
+        where: { status: 'OPEN' }
+      });
 
-    // 2. Obtener la información de los productos solicitados junto a sus recetas e insumos
-    const productIds = data.items.map((item) => Number(item.productId));
-    const products = await prisma.product.findMany({
-      where: { id: { in: productIds } },
-      include: {
-        recipe: {
-          include: {
-            recipeDetails: {
-              include: { ingredient: true }
+      if (!activeCashSession) {
+        throw new Error('CAJA_CERRADA');
+      }
+
+      // 2. Obtener la información de los productos solicitados junto a sus recetas e insumos
+      const productIds = data.items.map((item) => Number(item.productId));
+      const products = await tx.product.findMany({
+        where: { id: { in: productIds } },
+        include: {
+          recipe: {
+            include: {
+              recipeDetails: {
+                include: { ingredient: true }
+              }
             }
           }
         }
-      }
-    });
-
-    const productMap = new Map(products.map((p) => [p.id, p]));
-
-    let subtotal = 0;
-    const orderDetailsData: any[] = [];
-    const saleDetailsData: any[] = [];
-
-    // 3. Validar cada ítem del pedido, calcular subtotales y estructurar líneas de venta
-    for (const item of data.items) {
-      const prodId = Number(item.productId);
-      const qty = Number(item.quantity);
-      const product = productMap.get(prodId);
-
-      if (!product) {
-        throw new Error(`PRODUCT_NOT_FOUND:${prodId}`);
-      }
-
-      if (!product.available) {
-        throw new Error(`PRODUCT_UNAVAILABLE:${product.name}`);
-      }
-
-      const hasCustomPrice = item.unitPrice !== undefined && item.unitPrice !== null && String(item.unitPrice).trim() !== '';
-      const parsedCustomPrice = hasCustomPrice ? Number(item.unitPrice) : NaN;
-      const unitPrice = !isNaN(parsedCustomPrice) && parsedCustomPrice >= 0
-        ? Number(parsedCustomPrice.toFixed(2))
-        : Number(product.salePrice);
-
-      const itemSubtotal = Number((unitPrice * qty).toFixed(2));
-      subtotal = Number((subtotal + itemSubtotal).toFixed(2));
-
-      orderDetailsData.push({
-        productId: prodId,
-        quantity: qty,
-        unitPrice,
-        subtotal: itemSubtotal,
-        notes: item.notes || null
       });
 
-      saleDetailsData.push({
-        productId: prodId,
-        quantity: qty,
-        unitPrice,
-        subtotal: itemSubtotal
-      });
-    }
+      const productMap = new Map(products.map((p) => [p.id, p]));
 
-    const calculatedTax = Number(Number(data.tax || 0).toFixed(2));
-    const calculatedDiscount = Number(Number(data.discount || 0).toFixed(2));
-    const totalFinal = Number((subtotal + calculatedTax - calculatedDiscount).toFixed(2));
+      let subtotal = 0;
+      const orderDetailsData: any[] = [];
+      const saleDetailsData: any[] = [];
 
-    // 4. Transacción ACID: Generar correlativos únicos, crear comanda, factura (Sale) y descontar insumos
-    return prisma.$transaction(async (tx) => {
-      // A. Generación segura y libre de colisiones de orderNumber (ORD-XXXX)
-      const lastOrder = await tx.order.findFirst({
-        orderBy: { id: 'desc' },
-        select: { id: true, number: true }
-      });
+      // 3. Validar cada ítem del pedido, calcular subtotales y estructurar líneas de venta
+      for (const item of data.items) {
+        const prodId = Number(item.productId);
+        const qty = Number(item.quantity);
+        const product = productMap.get(prodId);
 
-      let nextOrderSeq = (lastOrder?.id ?? 0) + 1;
-      if (lastOrder?.number) {
-        const match = lastOrder.number.match(/(\d+)$/);
-        if (match) {
-          const lastNum = parseInt(match[1], 10);
-          if (!isNaN(lastNum)) {
-            nextOrderSeq = Math.max(nextOrderSeq, lastNum + 1);
-          }
+        if (!product) {
+          throw new Error(`PRODUCT_NOT_FOUND:${prodId}`);
+        }
+
+        if (!product.available) {
+          throw new Error(`PRODUCT_UNAVAILABLE:${product.name}`);
+        }
+
+        const hasCustomPrice = item.unitPrice !== undefined && item.unitPrice !== null && String(item.unitPrice).trim() !== '';
+        const parsedCustomPrice = hasCustomPrice ? Number(item.unitPrice) : NaN;
+        const unitPrice = !isNaN(parsedCustomPrice) && parsedCustomPrice >= 0
+          ? Number(parsedCustomPrice.toFixed(2))
+          : Number(product.salePrice);
+
+        const itemSubtotal = Number((unitPrice * qty).toFixed(2));
+        subtotal = Number((subtotal + itemSubtotal).toFixed(2));
+
+        orderDetailsData.push({
+          productId: prodId,
+          quantity: qty,
+          unitPrice,
+          subtotal: itemSubtotal,
+          notes: item.notes || null
+        });
+
+        saleDetailsData.push({
+          productId: prodId,
+          quantity: qty,
+          unitPrice,
+          subtotal: itemSubtotal
+        });
+      }
+
+      const totalFinal = Number((subtotal + calculatedTax - calculatedDiscount).toFixed(2));
+
+      // 4. Validar stock ANTES de crear o descontar nada: se suma lo que necesita toda la comanda
+      //    por insumo (un mismo insumo puede aparecer en varias líneas) y se compara con el
+      //    stock leído ahora, dentro de la transacción.
+      const needed = new Map<number, number>();
+      for (const item of data.items) {
+        const qty = Number(item.quantity);
+        const recipeDetails = productMap.get(Number(item.productId))?.recipe?.recipeDetails ?? [];
+        for (const detail of recipeDetails) {
+          needed.set(detail.ingredientId, (needed.get(detail.ingredientId) ?? 0) + detail.quantity * qty);
         }
       }
 
-      let orderNumber = `ORD-${nextOrderSeq.toString().padStart(4, '0')}`;
-      while (await tx.order.findUnique({ where: { number: orderNumber } })) {
-        nextOrderSeq++;
-        orderNumber = `ORD-${nextOrderSeq.toString().padStart(4, '0')}`;
-      }
+      const freshIngredients = needed.size > 0
+        ? await tx.ingredient.findMany({ where: { id: { in: [...needed.keys()] } } })
+        : [];
+      const currentStock = new Map(freshIngredients.map((ing) => [ing.id, ing.currentStock]));
 
-      // B. Generación segura y libre de colisiones de invoiceNumber (INV-YYYY-XXXX)
-      const currentYear = new Date().getFullYear();
-      const lastSale = await tx.sale.findFirst({
-        orderBy: { id: 'desc' },
-        select: { id: true, invoiceNumber: true }
-      });
-
-      let nextSaleSeq = (lastSale?.id ?? 0) + 1;
-      if (lastSale?.invoiceNumber) {
-        const match = lastSale.invoiceNumber.match(/(\d+)$/);
-        if (match) {
-          const lastNum = parseInt(match[1], 10);
-          if (!isNaN(lastNum)) {
-            nextSaleSeq = Math.max(nextSaleSeq, lastNum + 1);
-          }
+      const shortages: StockShortage[] = [];
+      for (const ingredient of freshIngredients) {
+        const totalNeeded = needed.get(ingredient.id) ?? 0;
+        if (totalNeeded - ingredient.currentStock > STOCK_EPSILON) {
+          shortages.push({
+            ingredientId: ingredient.id,
+            name: ingredient.name,
+            measurementUnit: ingredient.measurementUnit,
+            needed: roundQuantity(totalNeeded),
+            available: ingredient.currentStock
+          });
         }
       }
-
-      let invoiceNumber = `INV-${currentYear}-${nextSaleSeq.toString().padStart(4, '0')}`;
-      while (await tx.sale.findUnique({ where: { invoiceNumber } })) {
-        nextSaleSeq++;
-        invoiceNumber = `INV-${currentYear}-${nextSaleSeq.toString().padStart(4, '0')}`;
+      if (shortages.length > 0) {
+        throw new Error(`${INSUFFICIENT_STOCK_PREFIX}${JSON.stringify(shortages)}`);
       }
 
-      // C. Crear registro de comanda vinculada a la sesión de caja activa
+      // 5. Generar correlativos únicos: orderNumber (ORD-XXXX) e invoiceNumber (INV-YYYY-XXXX)
+      const orderNumber = await nextOrderNumber(tx);
+      const invoiceNumber = await nextInvoiceNumber(tx);
+
+      // 6. Crear registro de comanda vinculada a la sesión de caja activa
       const newOrder = await tx.order.create({
         data: {
           number: orderNumber,
@@ -241,7 +270,7 @@ export class OrderService {
         }
       });
 
-      // D. Crear registro de VENTA/Factura vinculada a la comanda
+      // 7. Crear registro de VENTA/Factura vinculada a la comanda
       const newSale = await tx.sale.create({
         data: {
           invoiceNumber,
@@ -250,46 +279,46 @@ export class OrderService {
           tax: calculatedTax,
           discount: calculatedDiscount,
           total: totalFinal,
-          paymentMethod: data.paymentMethod || 'CASH',
+          paymentMethod,
           saleDetails: {
             create: saleDetailsData
           }
         }
       });
 
-      // E. Descontar inventario por cada ingrediente según la receta del producto
+      // 8. Descontar inventario por cada ingrediente según la receta del producto, línea por línea
+      //    (el stock vigente se va actualizando para que líneas con el mismo insumo cuadren).
       for (const item of data.items) {
-        const prodId = Number(item.productId);
         const qty = Number(item.quantity);
-        const product = productMap.get(prodId);
+        const product = productMap.get(Number(item.productId));
 
-        if (product && product.recipe && product.recipe.recipeDetails) {
-          for (const detail of product.recipe.recipeDetails) {
-            const ingredientToDeduct = detail.quantity * qty;
-            const ingredient = detail.ingredient;
+        for (const detail of product?.recipe?.recipeDetails ?? []) {
+          const ingredientId = detail.ingredientId;
+          const ingredientToDeduct = roundQuantity(detail.quantity * qty);
 
-            const previousStock = ingredient.currentStock;
-            const newStock = previousStock - ingredientToDeduct;
+          const previousStock = currentStock.get(ingredientId) ?? 0;
+          const newStock = Math.max(0, roundQuantity(previousStock - ingredientToDeduct));
 
-            // Actualizar stock del insumo
-            await tx.ingredient.update({
-              where: { id: ingredient.id },
-              data: { currentStock: newStock }
-            });
+          // Actualizar stock del insumo
+          await tx.ingredient.update({
+            where: { id: ingredientId },
+            data: { currentStock: newStock }
+          });
 
-            // Registrar movimiento de salida en el historial (Kardex)
-            await tx.inventoryMovement.create({
-              data: {
-                ingredientId: ingredient.id,
-                type: 'OUT',
-                reason: 'SALE',
-                quantity: ingredientToDeduct,
-                previousStock,
-                newStock,
-                reference: `Order #${newOrder.number}`
-              }
-            });
-          }
+          // Registrar movimiento de salida en el historial (Kardex)
+          await tx.inventoryMovement.create({
+            data: {
+              ingredientId,
+              type: 'OUT',
+              reason: 'SALE',
+              quantity: ingredientToDeduct,
+              previousStock,
+              newStock,
+              reference: `Order #${newOrder.number}`
+            }
+          });
+
+          currentStock.set(ingredientId, newStock);
         }
       }
 
@@ -301,11 +330,63 @@ export class OrderService {
   }
 
   /**
-   * Elimina una comanda por su ID.
+   * Elimina una comanda por su ID, junto con su venta, y DEVUELVE el stock descontado:
+   * por cada insumo consumido por la comanda registra un movimiento IN compensatorio
+   * (MANUAL_ADJUSTMENT, referencia "Anulación Order #ORD-xxxx") en la misma transacción.
+   * Se devuelve lo que realmente salió del Kardex (movimientos SALE de la comanda), no lo que
+   * diga la receta hoy, porque la receta pudo cambiar después de la venta.
+   * Lanza `ORDER_NOT_FOUND` si la comanda no existe.
    * @param id ID de la comanda
    */
   async deleteOrder(id: number) {
     return prisma.$transaction(async (tx) => {
+      const order = await tx.order.findUnique({
+        where: { id },
+        select: { id: true, number: true, createdAt: true }
+      });
+      if (!order) {
+        throw new Error('ORDER_NOT_FOUND');
+      }
+
+      // Los números de comanda se pueden reutilizar tras borrar la última: se limita a los
+      // movimientos creados desde que nació esta comanda para no devolver stock de otra anterior.
+      const reference = `Order #${order.number}`;
+      const sold = await tx.inventoryMovement.findMany({
+        where: { reference, type: 'OUT', reason: 'SALE', date: { gte: order.createdAt } },
+        orderBy: { id: 'asc' }
+      });
+
+      const toReturn = new Map<number, number>();
+      for (const movement of sold) {
+        toReturn.set(movement.ingredientId, (toReturn.get(movement.ingredientId) ?? 0) + movement.quantity);
+      }
+
+      for (const [ingredientId, quantity] of toReturn) {
+        const ingredient = await tx.ingredient.findUnique({ where: { id: ingredientId } });
+        if (!ingredient) continue; // el insumo se eliminó después de la venta
+
+        const returned = roundQuantity(quantity);
+        const previousStock = ingredient.currentStock;
+        const newStock = roundQuantity(previousStock + returned);
+
+        await tx.ingredient.update({
+          where: { id: ingredientId },
+          data: { currentStock: newStock }
+        });
+
+        await tx.inventoryMovement.create({
+          data: {
+            ingredientId,
+            type: 'IN',
+            reason: 'MANUAL_ADJUSTMENT',
+            quantity: returned,
+            previousStock,
+            newStock,
+            reference: `Anulación ${reference}`
+          }
+        });
+      }
+
       await tx.sale.deleteMany({ where: { orderId: id } });
       return tx.order.delete({ where: { id } });
     });

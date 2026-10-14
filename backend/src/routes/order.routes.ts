@@ -7,8 +7,12 @@
 
 import { Router } from 'express';
 import { orderController } from '../controllers/order.controller';
+import { validateIdParam } from '../utils/http.utils';
 
 const router = Router();
+
+// Un :id que no sea entero positivo responde 400 en lugar de llegar a Prisma (500)
+router.param('id', validateIdParam);
 
 // Endpoint GET: Consultar el historial de comandas registradas
 router.get('/', (req, res) => orderController.getOrders(req, res));
