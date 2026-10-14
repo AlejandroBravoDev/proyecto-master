@@ -15,3 +15,19 @@ process.env.SQLITE_DB_PATH = path.join(dir, 'test.db');
 process.env.SQLITE_BACKUP_DIR = path.join(dir, 'backups');
 process.env.DATABASE_URL = '';
 process.env.FRONTEND_URL = '';
+
+// Variables de seguridad/operación: vacías para que un backend/.env local no cambie el resultado
+// de las pruebas (dotenv no pisa las variables ya definidas, ni siquiera vacías). Con NODE_ENV=test
+// los límites de tasa son muy altos por defecto; las pruebas de límites inyectan los suyos.
+for (const name of [
+  'TRUST_PROXY',
+  'CSP_REPORT_ONLY',
+  'ADMIN_INITIAL_PASSWORD',
+  'RATE_LIMIT_DISABLED',
+  'RATE_LIMIT_LOGIN_MAX',
+  'RATE_LIMIT_LOGIN_WINDOW_MS',
+  'RATE_LIMIT_API_MAX',
+  'RATE_LIMIT_API_WINDOW_MS',
+]) {
+  process.env[name] = '';
+}
