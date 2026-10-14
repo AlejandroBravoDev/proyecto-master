@@ -7,6 +7,8 @@
  */
 
 import prisma from '../prisma/client';
+import { RecipeIngredientInput } from '../utils/recipe.utils';
+import { recipeService } from './recipe.service';
 
 export class ProductService {
   /**
@@ -58,71 +60,87 @@ export class ProductService {
 
   /**
    * Crea un producto y opcionalmente su receta asociada de forma atómica.
-   * @param data Datos del producto y lista de ingredientes para la receta
+   * Lanza `CATEGORY_NOT_FOUND` o `INGREDIENT_NOT_FOUND:<id>` si la categoría o algún insumo no existen.
+   * @param data Datos del producto y lista de ingredientes para la receta (ya validados)
    */
   async createProduct(data: {
     categoryId: number;
     name: string;
-    description?: string;
+    description?: string | null;
     salePrice: number;
-    image?: string;
+    image?: string | null;
     available?: boolean;
     productType?: 'PREPARED' | 'DIRECT_INVENTORY';
     recipe?: {
       name?: string;
-      ingredients: Array<{ ingredientId: number; quantity: number; measurementUnit: string }>;
+      ingredients: RecipeIngredientInput[];
     };
   }) {
-    return prisma.product.create({
-      data: {
-        categoryId: data.categoryId,
-        name: data.name,
-        description: data.description,
-        salePrice: data.salePrice,
-        image: data.image,
-        available: data.available !== undefined ? data.available : true,
-        productType: data.productType || 'PREPARED',
-        // Creación anidada opcional de receta en la misma transacción
-        recipe: data.recipe && data.recipe.ingredients && data.recipe.ingredients.length > 0 ? {
-          create: {
-            name: data.recipe.name || `Receta de ${data.name}`,
-            recipeDetails: {
-              create: data.recipe.ingredients.map((ing) => ({
-                ingredientId: Number(ing.ingredientId),
-                quantity: Number(ing.quantity),
-                measurementUnit: String(ing.measurementUnit)
-              }))
+    return prisma.$transaction(async (tx) => {
+      const category = await tx.category.findUnique({ where: { id: data.categoryId }, select: { id: true } });
+      if (!category) {
+        throw new Error('CATEGORY_NOT_FOUND');
+      }
+
+      const hasRecipe = data.recipe && data.recipe.ingredients.length > 0;
+      const recipeDetails = hasRecipe
+        ? await recipeService.buildRecipeDetails(tx, data.recipe!.ingredients)
+        : [];
+
+      return tx.product.create({
+        data: {
+          categoryId: data.categoryId,
+          name: data.name,
+          description: data.description,
+          salePrice: data.salePrice,
+          image: data.image,
+          available: data.available !== undefined ? data.available : true,
+          productType: data.productType || 'PREPARED',
+          // Creación anidada opcional de receta en la misma transacción
+          recipe: hasRecipe ? {
+            create: {
+              name: data.recipe!.name || `Receta de ${data.name}`,
+              recipeDetails: { create: recipeDetails }
             }
-          }
-        } : undefined
-      },
-      include: {
-        category: true,
-        recipe: {
-          include: {
-            recipeDetails: {
-              include: { ingredient: true }
+          } : undefined
+        },
+        include: {
+          category: true,
+          recipe: {
+            include: {
+              recipeDetails: {
+                include: { ingredient: true }
+              }
             }
           }
         }
-      }
+      });
     });
   }
 
   /**
    * Actualiza los datos de un producto.
+   * `description` e `image` aceptan `null` para limpiar el campo.
+   * Lanza `CATEGORY_NOT_FOUND` si se cambia a una categoría inexistente.
    * @param id ID del producto
    * @param data Campos modificables del producto
    */
   async updateProduct(id: number, data: Partial<{
     categoryId: number;
     name: string;
-    description: string;
+    description: string | null;
     salePrice: number;
-    image: string;
+    image: string | null;
     available: boolean;
     productType: 'PREPARED' | 'DIRECT_INVENTORY';
   }>) {
+    if (data.categoryId !== undefined) {
+      const category = await prisma.category.findUnique({ where: { id: data.categoryId }, select: { id: true } });
+      if (!category) {
+        throw new Error('CATEGORY_NOT_FOUND');
+      }
+    }
+
     return prisma.product.update({
       where: { id },
       data,
@@ -140,16 +158,22 @@ export class ProductService {
   }
 
   /**
-   * Elimina un producto por su ID, eliminando previamente todas las dependencias
-   * (detalles de comandas, detalles de ventas y receta asociada) dentro de una transacción
-   * atómica para evitar errores de claves foráneas (P2003).
+   * Elimina un producto junto con su receta, dentro de una transacción atómica.
+   * Un producto con historial (comandas o ventas) NO se elimina: se perdería el detalle de
+   * esos documentos y los totales dejarían de cuadrar; lanza `PRODUCT_HAS_HISTORY` y el
+   * producto debe desactivarse (`available = false`) en su lugar.
    * @param id ID del producto
    */
   async deleteProduct(id: number) {
     return prisma.$transaction(async (tx) => {
-      // 1. Eliminar dependencias en comandas y ventas
-      await tx.orderDetail.deleteMany({ where: { productId: id } });
-      await tx.saleDetail.deleteMany({ where: { productId: id } });
+      // 1. Rechazar si tiene historial de comandas o ventas
+      const [orderLines, saleLines] = await Promise.all([
+        tx.orderDetail.count({ where: { productId: id } }),
+        tx.saleDetail.count({ where: { productId: id } })
+      ]);
+      if (orderLines > 0 || saleLines > 0) {
+        throw new Error('PRODUCT_HAS_HISTORY');
+      }
 
       // 2. Eliminar receta asociada y sus detalles si existen
       const recipe = await tx.recipe.findUnique({ where: { productId: id } });
@@ -158,7 +182,7 @@ export class ProductService {
         await tx.recipe.delete({ where: { id: recipe.id } });
       }
 
-      // 3. Eliminar el producto
+      // 3. Eliminar el producto (P2025 si no existe)
       return tx.product.delete({
         where: { id }
       });

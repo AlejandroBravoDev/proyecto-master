@@ -7,8 +7,12 @@
 
 import { Router } from 'express';
 import { productController } from '../controllers/product.controller';
+import { validateIdParam } from '../utils/http.utils';
 
 const router = Router();
+
+// Un :id que no sea entero positivo responde 400 en lugar de llegar a Prisma (500)
+router.param('id', validateIdParam);
 
 // Endpoint GET: Consultar productos con filtros opcionales por Query Params
 router.get('/', (req, res) => productController.getProducts(req, res));
