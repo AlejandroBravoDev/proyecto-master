@@ -53,6 +53,43 @@ describe('capa HTTP única (I9 + I5)', () => {
   });
 });
 
+describe('sesión con JWT (S1): el token solo viaja por la capa HTTP', () => {
+  const clean = (s) => withoutComments(s.code);
+
+  it('XMLHttpRequest, sendBeacon, EventSource y WebSocket no se usan: no pueden mandar la cabecera Authorization', () => {
+    expect(offenders((s) => /\b(XMLHttpRequest|sendBeacon|EventSource|WebSocket)\b/.test(clean(s)))).toEqual([]);
+  });
+
+  it('ninguna ruta de la API se abre por enlace directo (window.open, location, href/src de <a>, <img>, <iframe>)', () => {
+    const apiRef = '(?:_ENDPOINTS|getApiBaseUrl|\\/api\\/)';
+    expect(offenders((s) => /\bwindow\.open\s*\(/.test(clean(s)))).toEqual([]);
+    expect(offenders((s) => /\b(?:window\.location(?:\.href)?|location\.href)\s*=[^=]/.test(clean(s)))).toEqual([]);
+    expect(offenders((s) => /\blocation\.(?:assign|replace)\s*\(/.test(clean(s)))).toEqual([]);
+    expect(offenders((s) => new RegExp(`\\b(?:href|src)\\s*=\\s*\\{?[^}\\n]*${apiRef}`).test(clean(s)))).toEqual([]);
+    expect(offenders((s) => new RegExp(`\\.(?:href|src)\\s*=[^;\\n]*${apiRef}`).test(clean(s)))).toEqual([]);
+  });
+
+  it('solo authStorage.js toca sessionStorage / localStorage', () => {
+    expect(offenders((s) => /\b(sessionStorage|localStorage)\b/.test(clean(s)))).toEqual(['app/auth/authStorage.js']);
+  });
+
+  it('solo la capa HTTP y la sesión leen el token o escriben la cabecera Authorization', () => {
+    const allowed = ['app/auth/AuthContext.jsx', 'app/auth/authStorage.js', 'config/apiFetch.js'];
+    expect(offenders((s) => /\bAuthorization\b|\bgetStoredToken\b|\bsetStoredToken\b/.test(clean(s))).sort()).toEqual(allowed);
+  });
+
+  it('la única petición pública (skipAuth) es el login', () => {
+    expect(offenders((s) => /\bskipAuth\b/.test(clean(s))).sort()).toEqual(['app/auth/services/authService.js', 'config/apiFetch.js']);
+  });
+
+  it('apiFetch y authStorage no dependen de React (evita ciclos con AuthContext)', () => {
+    ['config/apiFetch.js', 'app/auth/authStorage.js'].forEach((path) => {
+      const file = sources.find((s) => s.path === path);
+      expect(file.code, path).not.toMatch(/from\s+['"]react/);
+    });
+  });
+});
+
 describe('formato de moneda único (I4)', () => {
   it('solo common/formatCurrency.js construye un formateador de moneda', () => {
     expect(offenders((s) => /style:\s*['"]currency['"]/.test(s.code))).toEqual(['app/common/formatCurrency.js']);

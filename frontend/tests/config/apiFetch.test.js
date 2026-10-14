@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { blobResponse, brokenJsonResponse, callOf, jsonResponse, mockFetch } from '../helpers/fetchMock';
 import {
   NETWORK_ERROR_MESSAGE,
@@ -7,13 +7,252 @@ import {
   getAuthHeaders,
   requestBlob,
   requestJson,
+  setUnauthorizedHandler,
 } from '../../src/config/apiFetch';
+import {
+  AUTH_TOKEN_KEY,
+  AUTH_USER_KEY,
+  getStoredToken,
+  getStoredUser,
+  setStoredToken,
+  setStoredUser,
+} from '../../src/app/auth/authStorage';
 
 const URL_TEST = 'http://localhost:3055/api/algo';
+const URL_LOGIN = 'http://localhost:3055/api/auth/login';
+const USER = { id: 1, username: 'Admin', role: 'ADMIN', active: true };
 
-describe('getAuthHeaders (punto de extensión de la fase S1)', () => {
-  it('hoy no añade cabeceras', () => {
+/** Deja una sesión guardada (token + usuario), como tras un login correcto. */
+function startSession(token = 'abc.def.ghi') {
+  setStoredToken(token);
+  setStoredUser(USER);
+}
+
+afterEach(() => {
+  setUnauthorizedHandler(null); // el handler es de módulo: que no pase de una prueba a otra
+});
+
+describe('getAuthHeaders', () => {
+  it('sin sesión no añade cabeceras', () => {
     expect(getAuthHeaders()).toEqual({});
+  });
+
+  it('con token guardado devuelve Authorization: Bearer <token>', () => {
+    setStoredToken('abc.def.ghi');
+    expect(getAuthHeaders()).toEqual({ Authorization: 'Bearer abc.def.ghi' });
+  });
+
+  it('acepta el token como argumento (y null = petición pública)', () => {
+    setStoredToken('guardado');
+    expect(getAuthHeaders('otro')).toEqual({ Authorization: 'Bearer otro' });
+    expect(getAuthHeaders(null)).toEqual({});
+  });
+});
+
+describe('apiFetch: token de la sesión', () => {
+  it('con sesión, añade Authorization: Bearer <token> a la petición', async () => {
+    startSession('abc.def.ghi');
+    const fetchMock = mockFetch(jsonResponse({}));
+    await apiFetch(URL_TEST, { method: 'POST', body: '{}', headers: { 'X-Test': '1' } });
+    expect(callOf(fetchMock).options.headers).toEqual({ 'X-Test': '1', Authorization: 'Bearer abc.def.ghi' });
+  });
+
+  it('sin sesión no manda Authorization', async () => {
+    const fetchMock = mockFetch(jsonResponse({}));
+    await apiFetch(URL_TEST);
+    expect(callOf(fetchMock).options.headers).not.toHaveProperty('Authorization');
+  });
+
+  it('las cabeceras del llamador tienen prioridad sobre el token', async () => {
+    startSession('abc.def.ghi');
+    const fetchMock = mockFetch(jsonResponse({}));
+    await apiFetch(URL_TEST, { headers: { Authorization: 'Bearer del-llamador' } });
+    expect(callOf(fetchMock).options.headers.Authorization).toBe('Bearer del-llamador');
+  });
+
+  it('skipAuth (el login): no manda el token y la opción no llega a fetch', async () => {
+    startSession('abc.def.ghi');
+    const fetchMock = mockFetch(jsonResponse({}));
+    await apiFetch(URL_LOGIN, { method: 'POST', body: '{}', skipAuth: true });
+
+    const { options } = callOf(fetchMock);
+    expect(options.headers).not.toHaveProperty('Authorization');
+    expect(options).not.toHaveProperty('skipAuth');
+  });
+
+  it('requestJson y requestBlob mandan el token; requestJson con skipAuth no', async () => {
+    startSession('abc.def.ghi');
+    const fetchMock = mockFetch(blobResponse('xlsx'));
+
+    await requestJson(URL_TEST, {}, 'No se pudo.');
+    await requestBlob(URL_TEST, {}, 'No se pudo.');
+    await requestJson(URL_LOGIN, { method: 'POST', body: { a: 1 }, skipAuth: true }, 'No se pudo.');
+
+    expect(callOf(fetchMock, 0).options.headers.Authorization).toBe('Bearer abc.def.ghi');
+    expect(callOf(fetchMock, 1).options.headers.Authorization).toBe('Bearer abc.def.ghi');
+    expect(callOf(fetchMock, 2).options.headers).not.toHaveProperty('Authorization');
+  });
+});
+
+describe('apiFetch: 401 (sesión caída)', () => {
+  const tokenExpired = () =>
+    jsonResponse({ error: 'Tu sesión expiró. Inicia sesión de nuevo.', code: 'TOKEN_EXPIRED' }, 401);
+
+  it('limpia token y usuario, llama al handler UNA vez con el motivo y devuelve la respuesta', async () => {
+    startSession();
+    const handler = vi.fn();
+    setUnauthorizedHandler(handler);
+    const response = tokenExpired();
+    mockFetch(response);
+
+    await expect(apiFetch(URL_TEST)).resolves.toBe(response);
+
+    expect(getStoredToken()).toBeNull();
+    expect(getStoredUser()).toBeNull();
+    expect(sessionStorage.getItem(AUTH_TOKEN_KEY)).toBeNull();
+    expect(sessionStorage.getItem(AUTH_USER_KEY)).toBeNull();
+    expect(handler).toHaveBeenCalledTimes(1);
+    expect(handler).toHaveBeenCalledWith({ code: 'TOKEN_EXPIRED', message: 'Tu sesión expiró. Inicia sesión de nuevo.' });
+  });
+
+  it('el handler ya ve la sesión borrada y se llama antes de que apiFetch devuelva', async () => {
+    startSession();
+    const seen = [];
+    setUnauthorizedHandler(() => seen.push(getStoredToken()));
+    mockFetch(tokenExpired());
+
+    await apiFetch(URL_TEST);
+    expect(seen).toEqual([null]);
+  });
+
+  it('varias peticiones paralelas con 401 cierran la sesión una sola vez', async () => {
+    startSession();
+    const handler = vi.fn();
+    setUnauthorizedHandler(handler);
+    const fetchMock = mockFetch(tokenExpired());
+
+    const responses = await Promise.all([apiFetch(URL_TEST), apiFetch(URL_TEST), apiFetch(URL_TEST)]);
+
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+    responses.forEach((r) => expect(r.status).toBe(401));
+    expect(handler).toHaveBeenCalledTimes(1);
+  });
+
+  it('el 401 no consume el cuerpo: el service sigue mostrando el texto del servidor', async () => {
+    startSession();
+    const handler = vi.fn();
+    setUnauthorizedHandler(handler);
+    mockFetch(jsonResponse({ error: 'Sesión vencida', code: 'INVALID_TOKEN' }, 401));
+
+    await expect(requestJson(URL_TEST, {}, 'No se pudo.')).rejects.toThrow('Sesión vencida');
+    expect(handler).toHaveBeenCalledWith({ code: 'INVALID_TOKEN', message: 'Sesión vencida' });
+  });
+
+  it('un 401 sin cuerpo JSON también cierra la sesión (motivo desconocido)', async () => {
+    startSession();
+    const handler = vi.fn();
+    setUnauthorizedHandler(handler);
+    mockFetch(brokenJsonResponse(401));
+
+    await apiFetch(URL_TEST);
+    expect(getStoredToken()).toBeNull();
+    expect(handler).toHaveBeenCalledWith({ code: null, message: null });
+  });
+
+  it('sin handler registrado igualmente limpia la sesión', async () => {
+    startSession();
+    mockFetch(tokenExpired());
+    await apiFetch(URL_TEST);
+    expect(getStoredToken()).toBeNull();
+  });
+
+  it('si el handler lanza un error, la petición devuelve igual la respuesta', async () => {
+    startSession();
+    setUnauthorizedHandler(() => {
+      throw new Error('boom');
+    });
+    const response = tokenExpired();
+    mockFetch(response);
+
+    await expect(apiFetch(URL_TEST)).resolves.toBe(response);
+    expect(getStoredToken()).toBeNull();
+  });
+
+  it('un 401 tardío de una sesión anterior no cierra la sesión nueva', async () => {
+    startSession('token-viejo');
+    const handler = vi.fn();
+    setUnauthorizedHandler(handler);
+    let release;
+    vi.stubGlobal('fetch', vi.fn().mockReturnValue(new Promise((resolve) => (release = resolve))));
+
+    const pending = apiFetch(URL_TEST); // sale con token-viejo
+    startSession('token-nuevo'); // mientras tanto el usuario vuelve a entrar
+    release(tokenExpired());
+    await pending;
+
+    expect(handler).not.toHaveBeenCalled();
+    expect(getStoredToken()).toBe('token-nuevo');
+  });
+
+  it('un 401 de una petición SIN token (no había sesión) no dispara el handler', async () => {
+    const handler = vi.fn();
+    setUnauthorizedHandler(handler);
+    mockFetch(jsonResponse({ error: 'Falta el token', code: 'NO_TOKEN' }, 401));
+
+    await apiFetch(URL_TEST);
+    expect(handler).not.toHaveBeenCalled();
+  });
+
+  it('el 401 del login (credenciales incorrectas) no cierra la sesión ni dispara el handler', async () => {
+    startSession();
+    const handler = vi.fn();
+    setUnauthorizedHandler(handler);
+    mockFetch(jsonResponse({ error: 'Usuario o contraseña incorrectos.' }, 401));
+
+    await expect(
+      requestJson(URL_LOGIN, { method: 'POST', body: { username: 'x', password: 'y' }, skipAuth: true }, 'Credenciales inválidas.')
+    ).rejects.toThrow('Usuario o contraseña incorrectos.');
+
+    expect(handler).not.toHaveBeenCalled();
+    expect(getStoredToken()).toBe('abc.def.ghi');
+  });
+
+  it('un 403 (rol insuficiente) no cierra la sesión y muestra el texto del servidor', async () => {
+    startSession();
+    const handler = vi.fn();
+    setUnauthorizedHandler(handler);
+    mockFetch(jsonResponse({ error: 'No tienes permisos para realizar esta acción.' }, 403));
+
+    await expect(requestJson(URL_TEST, {}, 'No se pudo.')).rejects.toThrow('No tienes permisos para realizar esta acción.');
+
+    expect(handler).not.toHaveBeenCalled();
+    expect(getStoredToken()).toBe('abc.def.ghi');
+    expect(getStoredUser()).toEqual(USER);
+  });
+
+  it('un error de red no cierra la sesión', async () => {
+    startSession();
+    const handler = vi.fn();
+    setUnauthorizedHandler(handler);
+    vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new TypeError('Failed to fetch')));
+
+    await expect(apiFetch(URL_TEST)).rejects.toThrow(NETWORK_ERROR_MESSAGE);
+    expect(handler).not.toHaveBeenCalled();
+    expect(getStoredToken()).toBe('abc.def.ghi');
+  });
+
+  it('setUnauthorizedHandler devuelve una función que lo quita, sin quitar uno más nuevo', async () => {
+    startSession();
+    const first = vi.fn();
+    const second = vi.fn();
+    const removeFirst = setUnauthorizedHandler(first);
+    setUnauthorizedHandler(second);
+    removeFirst(); // el primero ya no es el registrado: no debe quitar al segundo
+
+    mockFetch(tokenExpired());
+    await apiFetch(URL_TEST);
+    expect(first).not.toHaveBeenCalled();
+    expect(second).toHaveBeenCalledTimes(1);
   });
 });
 
@@ -31,7 +270,7 @@ describe('apiFetch', () => {
     expect(options.headers).toEqual({ 'X-Test': '1' });
   });
 
-  it('sin opciones envía un objeto de cabeceras (listo para recibir la autenticación)', async () => {
+  it('sin opciones ni sesión envía un objeto de cabeceras vacío', async () => {
     const fetchMock = mockFetch(jsonResponse({}));
     await apiFetch(URL_TEST);
     expect(callOf(fetchMock).options.headers).toEqual({});

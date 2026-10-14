@@ -1,7 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { blobResponse, brokenJsonResponse, callOf, jsonResponse, mockFetch } from '../helpers/fetchMock';
 import { NETWORK_ERROR_MESSAGE } from '../../src/config/apiFetch';
-import { loginUser } from '../../src/app/auth/services/authService';
+import { fetchCurrentUser, loginUser } from '../../src/app/auth/services/authService';
+import { setStoredToken } from '../../src/app/auth/authStorage';
 import {
   createCategory,
   createProduct,
@@ -60,17 +61,37 @@ beforeEach(() => {
 });
 
 describe('authService.loginUser', () => {
-  it('envía POST JSON a /api/auth/login y devuelve el usuario', async () => {
+  it('envía POST JSON a /api/auth/login y devuelve el usuario y el token', async () => {
     const user = { id: 1, username: 'Admin', role: 'ADMIN', active: true };
-    const fetchMock = mockFetch(jsonResponse({ user }));
+    const fetchMock = mockFetch(jsonResponse({ user, token: 'jwt-123' }));
 
-    await expect(loginUser({ username: 'Admin', password: '123456' })).resolves.toEqual(user);
+    await expect(loginUser({ username: 'Admin', password: '123456' })).resolves.toEqual({ user, token: 'jwt-123' });
 
     const { url, options, body } = callOf(fetchMock);
     expect(url).toBe(`${BASE}/api/auth/login`);
     expect(options.method).toBe('POST');
     expect(options.headers['Content-Type']).toBe('application/json');
     expect(body).toEqual({ username: 'Admin', password: '123456' });
+  });
+
+  it('es una petición pública: no manda el token de una sesión anterior', async () => {
+    setStoredToken('token-anterior');
+    const fetchMock = mockFetch(jsonResponse({ user: { id: 1 }, token: 'jwt-123' }));
+
+    await loginUser({ username: 'Admin', password: '123456' });
+
+    expect(callOf(fetchMock).options.headers).not.toHaveProperty('Authorization');
+  });
+
+  it.each([
+    ['sin token', { user: { id: 1 } }],
+    ['con un token vacío', { user: { id: 1 }, token: '' }],
+    ['con un token que no es texto', { user: { id: 1 }, token: 123 }],
+    ['sin usuario', { token: 'jwt-123' }],
+    ['con el cuerpo vacío', {}],
+  ])('una respuesta correcta %s es un error (no se puede iniciar sesión)', async (_name, body) => {
+    mockFetch(jsonResponse(body));
+    await expect(loginUser({ username: 'Admin', password: '123456' })).rejects.toThrow(/no devolvió una sesión válida/);
   });
 
   it('propaga el mensaje en español del backend', async () => {
@@ -91,6 +112,36 @@ describe('authService.loginUser', () => {
   it('si el cuerpo no es JSON usa un mensaje genérico con el código HTTP', async () => {
     mockFetch(brokenJsonResponse(502));
     await expect(loginUser({ username: 'x', password: 'y' })).rejects.toThrow(/502/);
+  });
+});
+
+describe('authService.fetchCurrentUser', () => {
+  it('pide GET /api/auth/me con el token y devuelve el usuario fresco', async () => {
+    setStoredToken('jwt-123');
+    const user = { id: 2, username: 'maria', role: 'WORKER', active: true };
+    const fetchMock = mockFetch(jsonResponse({ user }));
+
+    await expect(fetchCurrentUser()).resolves.toEqual(user);
+
+    const { url, options } = callOf(fetchMock);
+    expect(url).toBe(`${BASE}/api/auth/me`);
+    expect(options.method).toBe('GET');
+    expect(options.headers.Authorization).toBe('Bearer jwt-123');
+  });
+
+  it('una respuesta sin usuario es un error', async () => {
+    setStoredToken('jwt-123');
+    mockFetch(jsonResponse({}));
+    await expect(fetchCurrentUser()).rejects.toThrow('El servidor no devolvió los datos del usuario.');
+  });
+
+  it('propaga el texto del servidor y, sin texto, un mensaje genérico con el código', async () => {
+    setStoredToken('jwt-123');
+    mockFetch(jsonResponse({ error: 'Texto del backend' }, 500));
+    await expect(fetchCurrentUser()).rejects.toThrow('Texto del backend');
+
+    mockFetch(brokenJsonResponse(502));
+    await expect(fetchCurrentUser()).rejects.toThrow('Error (502): No se pudo verificar la sesión.');
   });
 });
 
@@ -233,6 +284,7 @@ describe('cajaService', () => {
 // ---------------------------------------------------------------------------------------------
 const SERVICE_CALLS = [
   ['loginUser', () => loginUser({ username: 'a', password: 'b' })],
+  ['fetchCurrentUser', () => fetchCurrentUser()],
   ['fetchUsers', () => fetchUsers()],
   ['createUser', () => createUser({ fullName: 'A', username: 'a', password: '123456' })],
   ['updateUser', () => updateUser(1, { fullName: 'A' })],
@@ -290,6 +342,35 @@ describe('capa HTTP compartida: comportamiento común de todos los services (I9 
     mockFetch(brokenJsonResponse(500));
     await expect(call()).rejects.toThrow(/^Error \(500\): /);
   });
+
+  // Con la sesión iniciada TODA función de service manda `Authorization: Bearer <token>`, salvo el login
+  // (público). Si un service volviera a llamar a `fetch` directo, esta prueba lo delataría.
+  it.each(SERVICE_CALLS.filter(([name]) => name !== 'loginUser'))(
+    '%s: manda el token de la sesión en la cabecera Authorization',
+    async (_name, call) => {
+      setStoredToken('jwt-de-sesion');
+      const fetchMock = mockFetch(blobResponse('contenido'));
+      vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {}); // las descargas no navegan en jsdom
+
+      await call().catch(() => {}); // aquí solo importa la petición que salió (las descargas fallan al crear el archivo)
+
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+      const options = fetchMock.mock.calls[0][1]; // callOf intentaría parsear como JSON el FormData de la importación
+      expect(options.headers.Authorization).toBe('Bearer jwt-de-sesion');
+    }
+  );
+
+  it.each(SERVICE_CALLS.filter(([name]) => name !== 'loginUser'))(
+    '%s: un 401 cierra la sesión guardada y el error sigue mostrando el texto del servidor',
+    async (_name, call) => {
+      setStoredToken('jwt-de-sesion');
+      mockFetch(jsonResponse({ error: 'Sesión vencida', code: 'TOKEN_EXPIRED' }, 401));
+
+      await expect(call()).rejects.toThrow('Sesión vencida');
+
+      expect(sessionStorage.getItem('masterfood_auth_token')).toBeNull();
+    }
+  );
 
   it('el mismo error del backend se muestra igual en products (antes solo "error") y en users (antes con details)', async () => {
     const body = { error: 'Error al guardar', details: 'columna duplicada' };

@@ -19,12 +19,16 @@ export function mockFetch(...responses) {
   return fn;
 }
 
-/** Respuesta tipo fetch con cuerpo JSON. */
+/**
+ * Respuesta tipo fetch con cuerpo JSON.
+ * `clone()` devuelve otra respuesta igual: `apiFetch` lee una copia del cuerpo de un 401 para saber el motivo.
+ */
 export function jsonResponse(body, status = 200) {
   return {
     ok: status >= 200 && status < 300,
     status,
     json: async () => body,
+    clone: () => jsonResponse(body, status),
   };
 }
 
@@ -36,6 +40,7 @@ export function brokenJsonResponse(status = 502) {
     json: async () => {
       throw new SyntaxError('Unexpected token < in JSON');
     },
+    clone: () => brokenJsonResponse(status),
   };
 }
 
@@ -46,6 +51,7 @@ export function blobResponse(content = 'contenido', status = 200) {
     status,
     json: async () => ({}),
     blob: async () => new Blob([content]),
+    clone: () => blobResponse(content, status),
   };
 }
 
