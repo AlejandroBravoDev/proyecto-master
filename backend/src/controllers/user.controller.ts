@@ -7,18 +7,30 @@
 
 import { Request, Response } from 'express';
 import { userService } from '../services/user.service';
+import { errorDetails, parsePagination } from '../utils/http.utils';
 
 export class UserController {
   /**
    * GET /api/users
-   * Lista todos los usuarios/trabajadores registrados.
+   * Lista los usuarios/trabajadores registrados.
+   * Sin ?page ni ?limit devuelve el arreglo completo; con alguno de ellos devuelve
+   * `{ total, page, limit, totalPages, users }` paginado en el servidor.
    */
-  async getUsers(_req: Request, res: Response) {
+  async getUsers(req: Request, res: Response) {
     try {
+      const pagination = parsePagination(req.query, { defaultLimit: 15, maxLimit: 100 });
+      if (pagination === null) {
+        return res.status(400).json({ error: 'page y limit deben ser enteros mayores a 0.' });
+      }
+
+      if (pagination) {
+        return res.status(200).json(await userService.getUsersPage(pagination));
+      }
+
       const users = await userService.getAllUsers();
       return res.status(200).json(users);
     } catch (error: any) {
-      return res.status(500).json({ error: 'Error al obtener usuarios', details: error.message || error });
+      return res.status(500).json({ error: 'Error al obtener usuarios', details: errorDetails(error) });
     }
   }
 
@@ -37,7 +49,7 @@ export class UserController {
 
       return res.status(200).json(user);
     } catch (error: any) {
-      return res.status(500).json({ error: 'Error al obtener usuario', details: error.message || error });
+      return res.status(500).json({ error: 'Error al obtener usuario', details: errorDetails(error) });
     }
   }
 
@@ -47,9 +59,13 @@ export class UserController {
    */
   async createUser(req: Request, res: Response) {
     try {
-      const { fullName, username, password, role, joinedAt } = req.body;
+      const { fullName, username, password, role, joinedAt } = req.body ?? {};
 
-      if (!fullName || !username || !password) {
+      if (
+        !fullName || typeof fullName !== 'string' ||
+        !username || typeof username !== 'string' ||
+        !password || typeof password !== 'string'
+      ) {
         return res.status(400).json({ error: 'Nombre completo, nombre de usuario y contraseña son obligatorios.' });
       }
 
@@ -65,7 +81,10 @@ export class UserController {
       if (error.message === 'MISSING_FULL_NAME' || error.message === 'MISSING_USERNAME') {
         return res.status(400).json({ error: 'Datos de usuario incompletos.' });
       }
-      return res.status(500).json({ error: 'Error al crear usuario', details: error.message || error });
+      if (error.message === 'INVALID_JOINED_AT') {
+        return res.status(400).json({ error: 'La fecha de ingreso no es válida.' });
+      }
+      return res.status(500).json({ error: 'Error al crear usuario', details: errorDetails(error) });
     }
   }
 
@@ -76,7 +95,17 @@ export class UserController {
   async updateUser(req: Request, res: Response) {
     try {
       const id = Number(req.params.id);
-      const { fullName, username, role, active, joinedAt } = req.body;
+      const { fullName, username, role, active, joinedAt } = req.body ?? {};
+
+      if (
+        (fullName !== undefined && typeof fullName !== 'string') ||
+        (username !== undefined && typeof username !== 'string')
+      ) {
+        return res.status(400).json({ error: 'Datos de usuario incompletos.' });
+      }
+      if (active !== undefined && typeof active !== 'boolean') {
+        return res.status(400).json({ error: 'El campo "active" debe ser booleano.' });
+      }
 
       const user = await userService.updateUser(id, { fullName, username, role, active, joinedAt });
       return res.status(200).json(user);
@@ -87,10 +116,16 @@ export class UserController {
       if (error.message === 'USERNAME_ALREADY_EXISTS') {
         return res.status(400).json({ error: 'El nombre de usuario ya está registrado.' });
       }
+      if (error.message === 'MISSING_FULL_NAME' || error.message === 'MISSING_USERNAME') {
+        return res.status(400).json({ error: 'El nombre completo y el nombre de usuario no pueden estar vacíos.' });
+      }
+      if (error.message === 'INVALID_JOINED_AT') {
+        return res.status(400).json({ error: 'La fecha de ingreso no es válida.' });
+      }
       if (error.message === 'CANNOT_DEACTIVATE_LAST_ADMIN') {
         return res.status(400).json({ error: 'No se puede desactivar o degradar al único administrador activo del sistema.' });
       }
-      return res.status(500).json({ error: 'Error al actualizar usuario', details: error.message || error });
+      return res.status(500).json({ error: 'Error al actualizar usuario', details: errorDetails(error) });
     }
   }
 
@@ -101,7 +136,7 @@ export class UserController {
   async updatePassword(req: Request, res: Response) {
     try {
       const id = Number(req.params.id);
-      const { password } = req.body;
+      const { password } = req.body ?? {};
 
       if (!password) {
         return res.status(400).json({ error: 'La nueva contraseña es obligatoria.' });
@@ -116,7 +151,7 @@ export class UserController {
       if (error.message === 'INVALID_PASSWORD') {
         return res.status(400).json({ error: 'La contraseña debe tener al menos 6 caracteres.' });
       }
-      return res.status(500).json({ error: 'Error al actualizar contraseña', details: error.message || error });
+      return res.status(500).json({ error: 'Error al actualizar contraseña', details: errorDetails(error) });
     }
   }
 
@@ -127,7 +162,7 @@ export class UserController {
   async updateStatus(req: Request, res: Response) {
     try {
       const id = Number(req.params.id);
-      const { active } = req.body;
+      const { active } = req.body ?? {};
 
       if (typeof active !== 'boolean') {
         return res.status(400).json({ error: 'El campo "active" booleano es obligatorio.' });
@@ -142,7 +177,7 @@ export class UserController {
       if (error.message === 'CANNOT_DEACTIVATE_LAST_ADMIN') {
         return res.status(400).json({ error: 'No se puede desactivar al único administrador activo del sistema.' });
       }
-      return res.status(500).json({ error: 'Error al cambiar estado del usuario', details: error.message || error });
+      return res.status(500).json({ error: 'Error al cambiar estado del usuario', details: errorDetails(error) });
     }
   }
 }

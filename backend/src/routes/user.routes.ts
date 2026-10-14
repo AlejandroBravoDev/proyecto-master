@@ -6,8 +6,12 @@
 
 import { Router } from 'express';
 import { userController } from '../controllers/user.controller';
+import { validateIdParam } from '../utils/http.utils';
 
 const router = Router();
+
+// Un :id que no sea entero positivo responde 400 en lugar de llegar a Prisma (500)
+router.param('id', validateIdParam);
 
 // Endpoint GET: Listar todos los usuarios
 router.get('/', (req, res) => userController.getUsers(req, res));

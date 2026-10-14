@@ -3,10 +3,34 @@
  * SERVICIO DE GESTIÓN DE USUARIOS (MODEL/SERVICE LAYER)
  * ====================================================
  * Gestiona la administración de trabajadores y administradores del POS.
+ * El nombre de usuario es único SIN distinguir mayúsculas ("maria" == "Maria"),
+ * pero se guarda con la capitalización que escribió la persona.
  */
 
 import prisma from '../prisma/client';
 import { isValidPassword, hashPassword } from '../utils/auth.utils';
+import { findUserByUsername } from '../utils/username.utils';
+
+/** Campos públicos de un usuario (nunca el passwordHash). */
+const USER_SELECT = {
+  id: true,
+  fullName: true,
+  username: true,
+  role: true,
+  active: true,
+  joinedAt: true,
+  createdAt: true,
+  updatedAt: true
+} as const;
+
+/** Convierte la fecha de ingreso recibida; lanza INVALID_JOINED_AT si no es una fecha válida. */
+function parseJoinedAt(value: Date | string): Date {
+  const date = new Date(value);
+  if (isNaN(date.getTime())) {
+    throw new Error('INVALID_JOINED_AT');
+  }
+  return date;
+}
 
 export class UserService {
   /**
@@ -14,18 +38,34 @@ export class UserService {
    */
   async getAllUsers() {
     return prisma.user.findMany({
-      select: {
-        id: true,
-        fullName: true,
-        username: true,
-        role: true,
-        active: true,
-        joinedAt: true,
-        createdAt: true,
-        updatedAt: true
-      },
+      select: USER_SELECT,
       orderBy: { id: 'asc' }
     });
+  }
+
+  /**
+   * Obtiene una página de usuarios (orden por ID ascendente, sin passwordHash).
+   * Devuelve `{ total, page, limit, totalPages, users }`.
+   * @param pagination Página (desde 1) y usuarios por página
+   */
+  async getUsersPage(pagination: { page: number; limit: number }) {
+    const [total, users] = await Promise.all([
+      prisma.user.count(),
+      prisma.user.findMany({
+        select: USER_SELECT,
+        orderBy: { id: 'asc' },
+        skip: (pagination.page - 1) * pagination.limit,
+        take: pagination.limit
+      })
+    ]);
+
+    return {
+      total,
+      page: pagination.page,
+      limit: pagination.limit,
+      totalPages: Math.ceil(total / pagination.limit),
+      users
+    };
   }
 
   /**
@@ -34,16 +74,7 @@ export class UserService {
   async getUserById(id: number) {
     return prisma.user.findUnique({
       where: { id },
-      select: {
-        id: true,
-        fullName: true,
-        username: true,
-        role: true,
-        active: true,
-        joinedAt: true,
-        createdAt: true,
-        updatedAt: true
-      }
+      select: USER_SELECT
     });
   }
 
@@ -72,10 +103,8 @@ export class UserService {
       throw new Error('INVALID_PASSWORD');
     }
 
-    // Verificar si el username ya está en uso
-    const existing = await prisma.user.findFirst({
-      where: { username: { equals: trimmedUsername } }
-    });
+    // Verificar si el username ya está en uso (sin distinguir mayúsculas)
+    const existing = await findUserByUsername(trimmedUsername);
 
     if (existing) {
       throw new Error('USERNAME_ALREADY_EXISTS');
@@ -83,7 +112,7 @@ export class UserService {
 
     const role = data.role === 'ADMIN' ? 'ADMIN' : 'WORKER';
     const passwordHash = hashPassword(data.password);
-    const joinedAt = data.joinedAt ? new Date(data.joinedAt) : new Date();
+    const joinedAt = data.joinedAt ? parseJoinedAt(data.joinedAt) : new Date();
 
     return prisma.user.create({
       data: {
@@ -94,16 +123,7 @@ export class UserService {
         active: true,
         joinedAt
       },
-      select: {
-        id: true,
-        fullName: true,
-        username: true,
-        role: true,
-        active: true,
-        joinedAt: true,
-        createdAt: true,
-        updatedAt: true
-      }
+      select: USER_SELECT
     });
   }
 
@@ -125,15 +145,18 @@ export class UserService {
       throw new Error('USER_NOT_FOUND');
     }
 
+    // Un nombre o usuario enviado no puede quedar vacío
+    if (data.fullName !== undefined && !data.fullName.trim()) {
+      throw new Error('MISSING_FULL_NAME');
+    }
+    if (data.username !== undefined && !data.username.trim()) {
+      throw new Error('MISSING_USERNAME');
+    }
+
     // Si se modifica el username, verificar que no esté ocupado por otro usuario
-    if (data.username && data.username.trim() !== user.username) {
-      const trimmedUser = data.username.trim();
-      const existing = await prisma.user.findFirst({
-        where: {
-          username: { equals: trimmedUser },
-          NOT: { id }
-        }
-      });
+    // (sin distinguir mayúsculas; cambiar solo la capitalización del propio usuario sí es válido)
+    if (data.username !== undefined && data.username.trim() !== user.username) {
+      const existing = await findUserByUsername(data.username.trim(), id);
       if (existing) {
         throw new Error('USERNAME_ALREADY_EXISTS');
       }
@@ -159,18 +182,9 @@ export class UserService {
         username: data.username !== undefined ? data.username.trim() : undefined,
         role: nextRole,
         active: nextActive,
-        joinedAt: data.joinedAt !== undefined ? new Date(data.joinedAt) : undefined
+        joinedAt: data.joinedAt !== undefined ? parseJoinedAt(data.joinedAt) : undefined
       },
-      select: {
-        id: true,
-        fullName: true,
-        username: true,
-        role: true,
-        active: true,
-        joinedAt: true,
-        createdAt: true,
-        updatedAt: true
-      }
+      select: USER_SELECT
     });
   }
 
@@ -219,16 +233,7 @@ export class UserService {
     return prisma.user.update({
       where: { id },
       data: { active: Boolean(active) },
-      select: {
-        id: true,
-        fullName: true,
-        username: true,
-        role: true,
-        active: true,
-        joinedAt: true,
-        createdAt: true,
-        updatedAt: true
-      }
+      select: USER_SELECT
     });
   }
 }
