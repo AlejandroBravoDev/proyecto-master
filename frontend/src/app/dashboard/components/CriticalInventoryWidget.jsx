@@ -23,10 +23,7 @@ export default function CriticalInventoryWidget({ ingredients = [] }) {
                 {ingredients.length}
               </span>
             )}
-          </div>
-          <p className="text-xs text-slate-400 mt-0.5">
-            Porcentaje calculado en base al stock mínimo configurado en inventario
-          </p>
+          </div>  
         </div>
 
         <button
@@ -51,9 +48,8 @@ export default function CriticalInventoryWidget({ ingredients = [] }) {
         <>
           <div className="space-y-4 flex-1 flex flex-col justify-around py-1">
             {visibleIngredients.map((item, idx) => {
-              const rawPercentage = Number(item.percentageRemaining) || 0;
-              const percentage = Math.max(0, Math.min(100, Math.round(rawPercentage)));
-              const isCritical = percentage <= 20;
+              const stockRemaining = Number(item.stockRemaining) || 0;
+              const isCritical = stockRemaining <= 10;
 
               return (
                 <div
@@ -67,7 +63,7 @@ export default function CriticalInventoryWidget({ ingredients = [] }) {
                       {item.name}
                     </span>
                     <span className={isCritical ? 'text-brand-red font-extrabold' : 'text-slate-400'}>
-                      {percentage}% Restante
+                      {stockRemaining} {item.measurementUnit} Restante
                     </span>
                   </div>
 
@@ -77,7 +73,7 @@ export default function CriticalInventoryWidget({ ingredients = [] }) {
                       className={`h-full rounded-full transition-all duration-500 ${
                         isCritical ? 'bg-brand-red' : 'bg-brand-orange'
                       }`}
-                      style={{ width: `${percentage}%` }}
+                      style={{ width: `${stockRemaining}%` }}
                     />
                   </div>
                 </div>

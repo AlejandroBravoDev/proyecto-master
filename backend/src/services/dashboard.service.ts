@@ -130,13 +130,13 @@ export class DashboardService {
 
     // Mapear lista de insumos críticos con su porcentaje restante
     const criticalStockIngredients = criticalIngredientsList.map((ing) => {
-      let percentageRemaining = 0;
+      let stockRemaining = 0;
       if (ing.minimumStock > 0) {
-        percentageRemaining = Math.max(0, Math.round((ing.currentStock / ing.minimumStock) * 100));
+        stockRemaining = ing.currentStock;
       } else if (ing.currentStock <= 0) {
-        percentageRemaining = 0;
+        stockRemaining = 0;
       } else {
-        percentageRemaining = 100;
+        stockRemaining = 100;
       }
 
       return {
@@ -145,7 +145,7 @@ export class DashboardService {
         currentStock: ing.currentStock,
         minimumStock: ing.minimumStock,
         measurementUnit: ing.measurementUnit,
-        percentageRemaining
+        stockRemaining
       };
     });
 
